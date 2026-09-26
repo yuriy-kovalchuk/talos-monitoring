@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# CI runs checks on every push/PR. On a green push to main it additionally
+# publishes the :main image (job below); releases — tagged image + helm chart
+# — live in cd.yml on tag pushes, so :latest always means newest release.
+
+env:
+  # Target of the publish job (main pushes only). REGISTRY/IMAGE come from
+  # Forgejo repo variables (Settings → Actions → Variables) so this file
+  # carries no reference to any specific registry. REGISTRY_USERNAME /
+  # REGISTRY_PASSWORD are repo secrets, and only the publish job reads
+  # them — PR runs never receive push credentials.
+  REGISTRY: ${{ vars.REGISTRY }}
+  IMAGE: ${{ vars.IMAGE }}
+
+jobs:
+  checks:
+    name: Code checks + helm lint
+    runs-on: [docker]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # tags are needed for git describe in `make build`
+
+      - name: Set up Go
+        # Forgejo mirror of setup-go: unlike the GitHub original it talks to the
+        # runner cache, so the Go toolchain + module cache are saved/restored
+        # across runs (needs `cache: enabled: true` in the runner config).
+        uses: https://data.forgejo.org/actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.11.4/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.11.4
+          golangci-lint version
+
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -s -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt -s needed for: $unformatted"
+            exit 1
+          fi
+
+      - name: Vet, build, test, lint
+        run: make vet build test lint
+
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      - name: Install helm
+        run: |
+          curl -fsSL "https://get.helm.sh/helm-v3.18.6-linux-amd64.tar.gz" | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/helm
+          helm version --short
+
+      - name: Helm lint
+        run: make helm-lint
+
+      - name: Helm template render (default values)
+        run: make helm-template
+
+  publish:
+    name: Publish :main image
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [docker]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # tags are needed for git describe (VERSION)
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Compute version and tags
+        id: version
+        run: |
+          {
+            # v*-tags only: the repo carries old non-release tags (e.g. the
+            # pre-merge backup) that must not end up in the embedded version.
+            echo "VERSION=$(git describe --tags --match 'v[0-9]*' 2>/dev/null || echo main)"
+            echo "COMMIT=$(git rev-parse --short HEAD)"
+            echo "BUILDDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo 'TAGS<<EOF'
+            echo "${REGISTRY}/${IMAGE}:main"
+            echo "${REGISTRY}/${IMAGE}:main-${GITHUB_SHA}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image (linux/amd64)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+            COMMIT=${{ steps.version.outputs.COMMIT }}
+            BUILDDATE=${{ steps.version.outputs.BUILDDATE }}
+          tags: ${{ steps.version.outputs.TAGS }}

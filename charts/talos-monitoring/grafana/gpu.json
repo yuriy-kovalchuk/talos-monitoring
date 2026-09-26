@@ -1,0 +1,1869 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": null,
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "name": "Reboot",
+        "target": {
+          "expr": "max(resets(talos_node_uptime_seconds{node=\"$node\"}[$__rate_interval])) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "Reboot",
+        "textFormat": "the node came back up"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "GPUs",
+      "description": "Cards with a kernel driver bound. A card with no driver has no /sys/class/drm entry and cannot be counted here.",
+      "datasource": null,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max(talos_gpus{node=\"$node\"})",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "cards",
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "count(count by (driver) (max by (card, driver) (talos_gpu_info{node=\"$node\"}))) or vector(0)",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "drivers",
+          "range": false,
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Busiest card",
+      "description": "Highest GPU utilisation right now. Not every driver reports it; amdgpu does.",
+      "datasource": null,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "topk(1, max by (card) (talos_gpu_utilization_ratio{node=\"$node\"})) * 100",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "{{card}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "VRAM",
+      "description": "The fullest card's video memory. VRAM does not page out — a card at 100% fails allocations rather than slowing down.",
+      "datasource": null,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max(max by (card) (talos_gpu_memory_used_bytes{node=\"$node\"}) / max by (card) (talos_gpu_memory_total_bytes{node=\"$node\"})) * 100",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "fullest card",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "GTT",
+      "description": "System memory the GPU can address directly, summed over cards.",
+      "datasource": null,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "sum(max by (card) (talos_gpu_gtt_used_bytes{node=\"$node\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "used",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "sum(max by (card) (talos_gpu_gtt_total_bytes{node=\"$node\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "total",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Hottest",
+      "description": "Warmest GPU reading, and the card it came from.",
+      "datasource": null,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "topk(1, (max by (chip, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) * on (chip) group_left (card) max by (chip, card) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left (card) max by (pci, card) (talos_gpu_info{node=\"$node\"}))) or label_replace((max by (chip, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) unless on (chip) max by (chip, card) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left (card) max by (pci, card) (talos_gpu_info{node=\"$node\"}))), \"card\", \"unknown card\", \"\", \"\"))",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "{{card}} · {{sensor}} {{label}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "celsius",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Power",
+      "description": "Power draw reported by the GPU hwmon chips.",
+      "datasource": null,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "sum(max by (sensor) (talos_sensor_power_watts{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"})) or vector(0)",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "draw",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "watt",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "$card",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "panels": [],
+      "repeat": "card"
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Utilisation",
+      "description": "GPU busy percentage. Not every driver reports it; amdgpu does.",
+      "datasource": null,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_utilization_ratio{node=\"$node\", card=\"$card\"}) * 100",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "busy",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1,
+          "min": -5,
+          "max": 100
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "busy"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "Video memory and the system memory the GPU can address. VRAM does not page out — a full card fails allocations rather than slowing down.",
+      "datasource": null,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_memory_used_bytes{node=\"$node\", card=\"$card\"})",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "VRAM used",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_memory_total_bytes{node=\"$node\", card=\"$card\"})",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "VRAM total",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_gtt_used_bytes{node=\"$node\", card=\"$card\"})",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "GTT used",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_gtt_total_bytes{node=\"$node\", card=\"$card\"})",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "GTT total",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/total/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    8,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Temperature",
+      "description": "Every temperature the card's hwmon chip reports.",
+      "datasource": null,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (chip, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "{{sensor}} {{label}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "celsius",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Power",
+      "description": "The reading is instantaneous despite the _average filename, and swings either side of the cap; the cap governs the 5m line, which should sit on it.",
+      "datasource": null,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (chip, label, sensor) (talos_sensor_power_watts{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "{{sensor}} {{label}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "avg_over_time((max by (chip, label, sensor) (talos_sensor_power_watts{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"})))[5m:])",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "5m average",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (chip) (talos_sensor_power_limit_watts{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\", limit=\"cap\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "board cap",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "watt",
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/5m average/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/board cap/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    8,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Clocks",
+      "description": "Engine and memory clocks. mclk is the physical clock — a card's marketed memory speed is double it.",
+      "datasource": null,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (chip, label, sensor) (talos_sensor_frequency_hertz{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "{{sensor}} {{label}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "hertz",
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Fan",
+      "description": "Fan speed against the chip's rated maximum. A line at zero is a stopped fan.",
+      "datasource": null,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (chip, sensor) (talos_sensor_fan_rpm{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "{{sensor}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (chip, sensor) (talos_sensor_fan_limit_rpm{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\", limit=\"max\"}) and on (chip) max by (chip) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left () max by (pci) (talos_gpu_info{node=\"$node\", card=\"$card\"}))",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "{{sensor}} max",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "rotrpm",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/max/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    8,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Every card",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Cards",
+      "description": "One row per card. PCI address cross-references the PCI dashboard.",
+      "datasource": null,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card, driver, pci, pci_id) (talos_gpu_info{node=\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_utilization_ratio{node=\"$node\"}) * 100",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_memory_used_bytes{node=\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "C"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_memory_total_bytes{node=\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "D"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_memory_used_bytes{node=\"$node\"}) / max by (card) (talos_gpu_memory_total_bytes{node=\"$node\"}) * 100",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "E"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_gtt_used_bytes{node=\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "F"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max by (card) (talos_gpu_gtt_total_bytes{node=\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "G"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "card",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "card"
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "includeByName": {},
+            "renameByName": {
+              "card": "Card",
+              "driver": "Driver",
+              "pci": "PCI address",
+              "pci_id": "PCI ID",
+              "Value #B": "Busy",
+              "Value #C": "VRAM used",
+              "Value #D": "VRAM total",
+              "Value #E": "VRAM full",
+              "Value #F": "GTT used",
+              "Value #G": "GTT total"
+            },
+            "indexByName": {
+              "card": 0,
+              "driver": 1,
+              "pci": 2,
+              "pci_id": 3,
+              "Value #B": 4,
+              "Value #C": 5,
+              "Value #D": 6,
+              "Value #E": 7,
+              "Value #F": 8,
+              "Value #G": 9
+            }
+          }
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [],
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Card"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Busy"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VRAM used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VRAM total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VRAM full"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 85
+                    },
+                    {
+                      "color": "red",
+                      "value": 95
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GTT used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GTT total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Thermals & power",
+      "description": "GPU temperatures against the chip's own thresholds, attributed to the card that owns the chip.",
+      "datasource": null,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "label_join(max by (chip, chip_name, sensor, label) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}), \"key\", \"/\", \"chip\", \"sensor\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "label_replace(label_replace(label_join(max by (chip, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) * on (chip) group_left (card) max by (chip, card) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left (card) max by (pci, card) (talos_gpu_info{node=\"$node\"})) or ((max by (chip, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) * 0 + -1) unless on (chip, sensor) (max by (chip, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) * on (chip) group_left (card) max by (chip, card) (max by (chip, pci) (talos_sensor_chip_info{node=\"$node\"}) * on (pci) group_left (card) max by (pci, card) (talos_gpu_info{node=\"$node\"})))), \"key\", \"/\", \"chip\", \"sensor\"), \"chip\", \"\", \"\", \"\"), \"sensor\", \"\", \"\", \"\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "label_replace(label_replace(label_join(max by (chip, sensor) (talos_sensor_temperature_limit_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) or ((max by (chip, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) * 0 + -1) unless on (chip, sensor) (max by (chip, sensor) (talos_sensor_temperature_limit_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}))), \"key\", \"/\", \"chip\", \"sensor\"), \"chip\", \"\", \"\", \"\"), \"sensor\", \"\", \"\", \"\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "C"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "label_replace(label_replace(label_join(max by (chip, sensor) (talos_sensor_alarm{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\", kind=\"temperature\"}) or ((max by (chip, sensor) (talos_sensor_temperature_celsius{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"}) * 0 + -1) unless on (chip, sensor) (max by (chip, sensor) (talos_sensor_alarm{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\", kind=\"temperature\"}))), \"key\", \"/\", \"chip\", \"sensor\"), \"chip\", \"\", \"\", \"\"), \"sensor\", \"\", \"\", \"\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "D"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "key",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "chip": true,
+              "key": true,
+              "Value #B": true
+            },
+            "includeByName": {},
+            "renameByName": {
+              "sensor": "Sensor",
+              "label": "Label",
+              "chip_name": "Chip",
+              "card": "Card",
+              "Value #A": "Reading",
+              "Value #C": "Limit",
+              "Value #D": "Alarm"
+            },
+            "indexByName": {
+              "card": 0,
+              "sensor": 1,
+              "label": 2,
+              "chip_name": 3,
+              "Value #A": 4,
+              "Value #C": 5,
+              "Value #D": 6
+            }
+          }
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [],
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Card"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reading"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Limit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "–",
+                        "color": "text",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Alarm"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "–",
+                        "color": "text",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "clear",
+                        "color": "text",
+                        "index": 1
+                      },
+                      "1": {
+                        "text": "RAISED",
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "label": "Node",
+        "type": "query",
+        "datasource": null,
+        "definition": "label_values(talos_node_up, node)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(talos_node_up, node)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {},
+        "options": [],
+        "description": "Which node this page is about; the UI's node switcher."
+      },
+      {
+        "name": "card",
+        "label": "Card",
+        "type": "query",
+        "datasource": null,
+        "definition": "label_values(talos_gpu_info{node=\"$node\"}, card)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(talos_gpu_info{node=\"$node\"}, card)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allowCustomValue": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "description": "Which cards to show; the rows below repeat over it."
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "talos"
+      ],
+      "targetBlank": false,
+      "title": "Talos dashboards",
+      "tooltip": "",
+      "type": "dashboards"
+    }
+  ],
+  "description": "GPU metrics for one node: utilisation, video memory, GTT, and the temperature, fan and power readings from the GPU hwmon chips.",
+  "tags": [
+    "talos",
+    "gpu"
+  ],
+  "title": "Talos GPU",
+  "uid": "talos-gpu",
+  "version": 1
+}

@@ -1,0 +1,86 @@
+{{define "node_sensors-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Sensors</div>
+  <h1>Sensors · {{.Node.Name}}</h1>
+</div>
+
+{{template "sensors-live" .}}
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/sensors), swapped with
+     outerHTML. The container renders even with no readings, so a collector
+     that starts reporting later is picked up without a page reload. */}}
+{{define "sensors-live"}}
+<div id="sensors-live" hx-get="/partials/nodes/{{.Node.Name}}/sensors"
+     hx-trigger="every 30s" hx-swap="outerHTML">
+{{if .SensorGroups}}
+
+{{if .SensorSummary.Available}}
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Hottest</div>
+    <div class="stat-value mono">{{fallback .SensorSummary.Hottest "–"}}<span class="stat-sub">{{.SensorSummary.HottestAt}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Closest to limit</div>
+    {{if .SensorSummary.Closest}}
+    <div class="stat-value mono">{{.SensorSummary.Closest}}<span class="stat-sub">{{.SensorSummary.ClosestAt}}</span></div>
+    {{else}}
+    <div class="stat-value mono">–<span class="stat-sub">no thresholds reported</span></div>
+    {{end}}
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Alarms</div>
+    <div class="stat-value{{if not .SensorSummary.Alarms}} ok{{end}}">{{.SensorSummary.Alarms}}<span class="stat-sub">{{if .SensorSummary.Alarms}}chip raised{{else}}none active{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Sensors</div>
+    <div class="stat-value">{{.SensorSummary.Sensors}}<span class="stat-sub">{{.SensorSummary.Chips}} {{plural .SensorSummary.Chips "chip" "chips"}}</span></div>
+  </div>
+</div>
+{{end}}
+
+{{range .SensorGroups}}
+{{$g := .}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">{{$g.Title}}</span>
+    <span class="card-sub mono">{{len $g.Rows}} {{plural (len $g.Rows) "sensor" "sensors"}} · {{$g.Chips}} {{plural $g.Chips "chip" "chips"}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead>
+      <tr><th>Sensor</th><th>Reading</th><th>Of limit</th><th>Limit</th></tr>
+    </thead>
+    <tbody>
+      {{range $g.Rows}}
+      <tr>
+        <td>
+          {{.Name}}
+          <div class="cell-sub">{{.ChipName}}</div>
+        </td>
+        <td class="mono">{{.Value}} {{$g.Unit}}{{if .Alarm}}<div class="cell-sub pill-warn-text">alarm raised</div>{{end}}</td>
+        <td class="mono">
+          {{if .HasLimit}}
+          <span class="cell-bar"><span style="width:{{.Pct}}%"></span></span>
+          {{.Pct}}%
+          {{else}}–{{end}}
+        </td>
+        <td class="mono">{{if .HasLimit}}{{.Limit}} {{$g.Unit}}<div class="cell-sub">{{.LimitOf}}</div>{{else}}<span class="muted">not reported</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Sensors</span></div>
+  <div class="empty">No sensor data yet. The <code>sensors</code> collector is disabled, or
+  file reads were refused (they need the <code>os:admin</code> role).</div>
+</div>
+{{end}}
+</div>
+{{end}}

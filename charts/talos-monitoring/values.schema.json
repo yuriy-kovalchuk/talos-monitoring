@@ -1,0 +1,431 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "talos-monitoring values",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ns|us|ms|s|m|h)([0-9]+(ns|us|ms|s|m|h))*$"
+    },
+    "dnsName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "ttl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "ttl"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ttl": {
+          "$ref": "#/definitions/duration"
+        }
+      }
+    },
+    "enabledOnly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository"
+      ],
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "listenPort",
+        "logLevel"
+      ],
+      "properties": {
+        "listenPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        }
+      }
+    },
+    "scrape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interval",
+        "inventoryInterval",
+        "historyWindow"
+      ],
+      "properties": {
+        "interval": {
+          "$ref": "#/definitions/duration"
+        },
+        "inventoryInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "historyWindow": {
+          "$ref": "#/definitions/duration"
+        }
+      }
+    },
+    "collectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block",
+        "cpu",
+        "diskio",
+        "gpu",
+        "health",
+        "identity",
+        "kernel",
+        "memory",
+        "network",
+        "nodeapi",
+        "pci",
+        "processor",
+        "sensors",
+        "system",
+        "time",
+        "volumes"
+      ],
+      "properties": {
+        "block": {
+          "$ref": "#/definitions/ttl"
+        },
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "ttl",
+            "modeSeconds",
+            "freqInterval"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "ttl": {
+              "$ref": "#/definitions/duration"
+            },
+            "modeSeconds": {
+              "type": "boolean"
+            },
+            "freqInterval": {
+              "$ref": "#/definitions/duration"
+            }
+          }
+        },
+        "diskio": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "gpu": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "health": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "identity": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "kernel": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "memory": {
+          "$ref": "#/definitions/ttl"
+        },
+        "network": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "nodeapi": {
+          "$ref": "#/definitions/ttl"
+        },
+        "pci": {
+          "$ref": "#/definitions/ttl"
+        },
+        "processor": {
+          "$ref": "#/definitions/ttl"
+        },
+        "sensors": {
+          "$ref": "#/definitions/ttl"
+        },
+        "system": {
+          "$ref": "#/definitions/ttl"
+        },
+        "time": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "volumes": {
+          "$ref": "#/definitions/enabledOnly"
+        }
+      }
+    },
+    "talos": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roles",
+        "serviceAccountName"
+      ],
+      "properties": {
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "serviceAccountName": {
+          "$ref": "#/definitions/dnsName"
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "create"
+      ],
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "clusterRoleName": {
+          "type": "string"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "create"
+      ],
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "port"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer",
+            "ExternalName"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "$ref": "#/definitions/duration"
+        },
+        "scrapeTimeout": {
+          "$ref": "#/definitions/duration"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object"
+        },
+        "honorLabels": {
+          "type": "boolean"
+        }
+      }
+    },
+    "grafana": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "sidecarLabel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "key",
+            "value"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        "extraLabels": {
+          "type": "object"
+        },
+        "sidecarTargetDirectory": {
+          "type": "string"
+        }
+      }
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "containerSecurityContext": {
+      "type": "object"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "livenessProbe": {
+      "type": "object"
+    },
+    "readinessProbe": {
+      "type": "object"
+    },
+    "podAnnotations": {
+      "type": "object"
+    },
+    "podLabels": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "type": "object"
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    },
+    "topologySpreadConstraints": {
+      "type": "array"
+    },
+    "priorityClassName": {
+      "type": "string"
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extraEnv": {
+      "type": "array"
+    },
+    "extraVolumes": {
+      "type": "array"
+    },
+    "extraVolumeMounts": {
+      "type": "array"
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "minAvailable"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

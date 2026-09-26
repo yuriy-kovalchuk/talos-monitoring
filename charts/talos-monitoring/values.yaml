@@ -1,0 +1,267 @@
+# Default values for talos-monitoring.
+#
+#   helm install talos-monitoring ./charts/talos-monitoring \
+#     --namespace talos-monitoring --create-namespace
+#
+# Before the pod can talk to the nodes, every node's machineconfig needs
+# machine.features/kubernetesTalosAPIAccess — see README > Prerequisites.
+
+image:
+  # Registry prefix incl. trailing slash: GHCR by default.
+  registry: ghcr.io/
+  repository: yuriy-kovalchuk/talos-monitoring
+  # Empty = the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Overrides the full resource name. Keep it short: it is part of the
+# ServiceAccount and ClusterRole names.
+nameOverride: ""
+fullnameOverride: ""
+
+# --- Application flags (1:1 with `talos-monitoring serve --help`) ------------
+
+server:
+  listenPort: 8080                # --listen :<port>
+  logLevel: info                  # --log-level (debug, info, warn, error)
+
+scrape:
+  # --scrape-interval: TTL of the live nodeapi/sensors data. Every scrape
+  # issues calls on every node — shorter is fresher but load on the Talos API.
+  interval: 30s
+  # --inventory-interval: fallback TTL for collectors without their own
+  # default (currently unreachable — every inventory collector declares 1h).
+  inventoryInterval: 5m
+  # --history.window: in-memory CPU frequency samples kept for the CPU page's
+  # observed range. RAM-only; durable history is Prometheus' job.
+  historyWindow: 10m
+
+collectors:
+  # One enabled flag per collector (default on) and a TTL override where the
+  # collector has one. Disabling a collector stops its metrics from /metrics;
+  # the collector stays registered, so no state leaks.
+  #
+  # Roles: most collectors work with os:reader (machine API + COSI only).
+  # The ones marked "needs os:admin" read node files through the Talos Read
+  # RPC and degrade without it (see the note under each).
+  block:
+    enabled: true
+    ttl: 0s                       # --collectors.block.ttl (0 = scrape interval)
+  cpu:
+    # needs os:admin: the per-core frequency fallback (nodes whose /proc/cpuinfo
+    # is not per-core, e.g. intel_pstate) reads node files. Without it the
+    # collector warns once and drops only that fallback; the rest comes from
+    # machine API RPCs.
+    enabled: true
+    ttl: 0s                       # --collectors.cpu.ttl (0 = 5s)
+    # --collectors.cpu.mode-seconds: export talos_node_cpu_seconds_total
+    # (10 series per thread per node).
+    modeSeconds: false
+    # --collectors.cpu.freq-interval (0 = every cpu tick; only affects
+    # machines whose /proc/cpuinfo is not per-core, e.g. intel_pstate).
+    freqInterval: 0s
+  diskio:
+    enabled: true
+  gpu:
+    # needs os:admin: reads GPU sysfs files (uevent, link state) through the
+    # Talos Read RPC. Without it the collector self-disables on the first
+    # permission error.
+    enabled: true
+  health:
+    enabled: true
+  identity:
+    enabled: true
+  kernel:
+    enabled: true
+  memory:
+    enabled: true
+    ttl: 0s                       # --collectors.memory.ttl (0 = scrape interval)
+  network:
+    # needs os:admin: the throughput counters read /proc/net/dev. Without it
+    # only the counters drop; interface state comes from COSI.
+    enabled: true
+  nodeapi:
+    enabled: true
+    ttl: 0s                       # --collectors.nodeapi.ttl (0 = scrape interval)
+  pci:
+    # needs os:admin: the sysfs enrichment (link speed/width) reads node files.
+    # Without it only the enrichment drops; the COSI inventory is still
+    # reported.
+    enabled: true
+    ttl: 0s                       # --collectors.pci.ttl (0 = 1h)
+  processor:
+    enabled: true
+    ttl: 0s                       # --collectors.processor.ttl (0 = 1h)
+  sensors:
+    # needs os:admin: reads hwmon/thermal sysfs files through the Talos Read
+    # RPC. Without it the collector self-disables on the first permission
+    # error.
+    enabled: true
+    ttl: 0s                       # --collectors.sensors.ttl (0 = scrape interval)
+  system:
+    enabled: true
+    ttl: 0s                       # --collectors.system.ttl (0 = 1h)
+  time:
+    enabled: true
+  volumes:
+    enabled: true
+
+# --- In-cluster Talos authentication ------------------------------------------
+#
+# The chart creates a talos.dev/v1alpha1 ServiceAccount. Talos' in-cluster
+# controller issues a Secret of the same name (key `config`) holding a full
+# talosconfig with a 6 h client certificate, auto-renewed; the pod mounts it
+# and the client pool rebuilds on rotation. No long-lived admin cert in the pod.
+#
+# Node prerequisite (machineconfig of every node):
+#   machine.features/kubernetesTalosAPIAccess:
+#     enabled: true
+#     allowedRoles: [os:reader]       # must cover every role below
+#     allowedKubernetesNamespaces: [<release namespace>]
+
+talos:
+  # Roles for the Talos service account. os:reader covers every COSI/machine-API
+  # collector; the file-based ones (sensors, PCI sysfs enrichment, the CPU
+  # frequency fallback, network counters — see the "needs os:admin" notes above)
+  # need os:admin instead, because the Read RPC is admin-only, and self-disable
+  # gracefully without it. Default is the least privilege that still runs: add
+  # os:admin only if you want those extra collectors, and be aware the
+  # credential itself is not read-only then — os:admin can also read machine
+  # config and secrets.
+  roles:
+    - os:reader
+  # Name of the talos.dev/v1alpha1 ServiceAccount; the controller-created
+  # Secret carries the same name.
+  serviceAccountName: talos-monitoring
+
+# --- Kubernetes API (node discovery, PersistentVolume informer) ---------------
+# Both resources are cluster-scoped, so the role is a ClusterRole.
+
+rbac:
+  create: true
+  # ClusterRole to bind when create=false; defaults to the release fullname.
+  clusterRoleName: ""
+
+serviceAccount:
+  create: true
+  # Kubernetes ServiceAccount name; defaults to the release fullname.
+  name: ""
+  annotations: {}
+
+# --- Networking -----------------------------------------------------------------
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+serviceMonitor:
+  # Requires the monitoring.coreos.com/v1 CRD (Prometheus Operator).
+  enabled: false
+  interval: 30s
+  # Must stay above the 10 s per-node collection budget.
+  scrapeTimeout: 25s
+  # Namespace the ServiceMonitor is created in; empty = release namespace.
+  namespace: ""
+  # Labels Prometheus selects on, e.g. {release: prometheus}.
+  labels: {}
+  # Keep the exporter's own labels when they collide with the ones Prometheus
+  # attaches to every target. `service` (talos_service_*) and `namespace`
+  # (talos_pv_info) are both names the operator also sets; without this they
+  # arrive as exported_service / exported_namespace and every query that groups
+  # by them silently groups by the wrong thing. Turn it off only if you scrape
+  # with something that needs the target labels to win.
+  honorLabels: true
+
+grafana:
+  # Deploy the bundled dashboards (one ConfigMap per grafana/*.json) for
+  # Grafana's sidecar discovery.
+  enabled: false
+  sidecarLabel:
+    key: grafana_dashboard
+    value: "1"
+  extraLabels: {}
+  # The k8s-sidecar `k8s-sidecar-target-directory` annotation. When set, the
+  # dashboard lands in the Grafana folder named after the last path element —
+  # the dashboard provider needs `foldersFromFilesStructure: true` pointing at
+  # that path's root, e.g. sidecarTargetDirectory: /tmp/dashboards/Talos
+  # yields folder "Talos". Empty = the provider's default location.
+  sidecarTargetDirectory: ""
+
+# --- Security (restricted Pod Security Standard by default) ----------------------
+
+# Pod-level securityContext.
+securityContext:
+  runAsNonRoot: true
+  # Matches the image's USER (see Dockerfile).
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level securityContext.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# --- Resources --------------------------------------------------------------------
+# RAM is state (in-RAM ring, per-node snapshots, client pool) — size it for the
+# fleet. Deliberately no CPU limit: scrape bursts are the normal workload.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# --- Probes ---------------------------------------------------------------------------
+# /health = process alive (liveness). /ready = talosconfig loaded and per-node
+# clients built (readiness): until the in-cluster prerequisite is in place the
+# pod stays 0/1 Ready instead of looking healthy while scraping nothing.
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# --- Pod placement and metadata ---------------------------------------------------------
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+terminationGracePeriodSeconds: 30
+
+# Extra container material.
+extraEnv: []          # [{name, value}]
+extraVolumes: []      # raw Pod spec volumes entries
+extraVolumeMounts: [] # raw volumeMounts entries
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

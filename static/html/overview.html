@@ -1,0 +1,177 @@
+{{define "overview-content"}}
+<div class="page-head">
+  <div class="eyebrow">Overview</div>
+  <h1>Cluster dashboard</h1>
+</div>
+
+{{template "overview-body" .}}
+{{end}}
+
+{{/* overview-body is polled on its own by htmx (GET /partials/overview) and
+     swapped with outerHTML, so it must carry its own id and hx- attributes. */}}
+{{define "overview-body"}}
+<div id="overview-body" hx-get="/partials/overview" hx-trigger="every 5s" hx-swap="outerHTML">
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Needs attention</span>
+    {{if .Attention}}
+    <span class="card-sub mono">{{len .Attention}} to review</span>
+    {{else}}
+    <span class="card-sub mono">all clear</span>
+    {{end}}
+  </div>
+  {{if .Attention}}
+  <table>
+    <tbody>
+      {{range .Attention}}
+      <tr>
+        <td style="width:1%">
+          <span class="status-cell"><span class="dot {{if eq .Severity "down"}}dot-down{{else}}dot-ok{{end}}"></span>{{if eq .Severity "down"}}down{{else}}warn{{end}}</span>
+        </td>
+        <td><a class="row-link" href="/nodes/{{.Node}}">{{.Node}}</a></td>
+        <td>{{.Text}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">
+    <span class="status-cell"><span class="dot dot-ok"></span></span>
+    {{.Stats.Up}}/{{.Stats.Nodes}} nodes up · no node rebooted in the last hour.
+  </div>
+  {{end}}
+</div>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Cores</div>
+    <div class="stat-value">{{.Fleet.Cores}}<span class="stat-sub">{{.Fleet.Threads}} threads</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Memory installed</div>
+    <div class="stat-value mono">{{fallback .Fleet.Memory "–"}}<span class="stat-sub">{{.Fleet.DIMMs}} {{plural .Fleet.DIMMs "DIMM" "DIMMs"}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Storage</div>
+    <div class="stat-value mono">{{fallback .Fleet.Storage "–"}}<span class="stat-sub">{{.Fleet.Disks}} {{plural .Fleet.Disks "disk" "disks"}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Busiest node</div>
+    {{if .Fleet.HasBusiest}}
+    <div class="stat-value mono">{{printf "%.1f" .Fleet.BusiestPct}}%<span class="stat-sub">{{.Fleet.BusiestNode}}{{if .Fleet.HasBusiestLoad}} · load {{printf "%.2f" .Fleet.BusiestLoad}}{{end}}</span></div>
+    {{else}}
+    <div class="stat-value mono">–</div>
+    {{end}}
+  </div>
+  <div class="stat-card"{{if not .Fleet.GPUs}} data-fill="2wide"{{end}}>
+    <div class="stat-label">Images</div>
+    <div class="stat-value{{if eq .Fleet.Images 1}} ok{{end}}">{{.Fleet.Images}}<span class="stat-sub">{{if .Fleet.ImageNote}}all on {{.Fleet.ImageNote}}{{else if .Fleet.Images}}distinct schematics{{else}}not reported{{end}}</span></div>
+  </div>
+  <div class="stat-card"{{if not .Fleet.GPUs}} data-fill="2wide"{{end}}>
+    <div class="stat-label">Services</div>
+    {{if .Fleet.ServicesTotal}}
+    <div class="stat-value{{if not .Fleet.ServicesBad}} ok{{end}}">{{.Fleet.ServicesBad}}<span class="stat-sub">not healthy, of {{.Fleet.ServicesTotal}} fleet-wide</span></div>
+    {{else}}<div class="stat-value">–</div>{{end}}
+  </div>
+  {{if .Fleet.GPUs}}
+  <div class="stat-card" data-fill="2">
+    <div class="stat-label">GPUs</div>
+    <div class="stat-value">{{.Fleet.GPUs}}<span class="stat-sub">on {{.Fleet.GPUNodes}} {{plural .Fleet.GPUNodes "node" "nodes"}}</span></div>
+  </div>
+  {{end}}
+</div>
+
+{{/* Per-node system state. The node table below is capacity and identity; this
+     is the "is each node actually working" matrix, one row per node, built from
+     the health, time and volumes collectors. */}}
+{{if .SystemRows}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>System status</span>
+    <span class="card-sub mono">stage · services · clock · volumes, per node</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Node</th><th>Stage</th><th>Services</th><th>Load</th><th>Clock</th><th>Volumes</th><th>Diagnostics</th></tr></thead>
+    <tbody>
+      {{range .SystemRows}}
+      <tr>
+        <td><a class="crumb" href="/nodes/{{.Name}}/health">{{.Name}}</a></td>
+        <td>{{if .HasHealth}}<span class="pill pill-{{if .MachineReady}}ok{{else}}down{{end}}"><span class="pill-dot"></span>{{.Stage}}</span>{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="mono">{{if .HasHealth}}{{.ServicesHealthy}} / {{.ServicesTotal}}{{if .ServicesBad}}<div class="cell-sub pill-warn-text">{{.ServicesBad}} not healthy</div>{{end}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="mono">{{if .HasLoad}}{{printf "%.2f" .Load1}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="mono">{{if .HasClock}}{{if .ClockSynced}}synced{{else}}<span class="pill-warn-text">NOT synced</span>{{end}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="mono">{{if .VolumesNotReady}}<span class="pill-warn-text">{{.VolumesNotReady}} not ready</span>{{else}}ok{{end}}</td>
+        <td class="mono">{{if .Diagnostics}}<span class="pill-warn-text">{{.Diagnostics}}</span>{{else}}none{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Nodes</span>
+    <a class="link" href="/nodes">All nodes →</a>
+  </div>
+  {{if .Nodes}}
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead>
+      <tr>
+        <th>Node</th><th>Role</th><th>Status</th><th>CPU</th><th>Load</th>
+        <th class="col-memory">Memory</th><th class="col-storage">Storage</th>
+        <th class="col-temp">Kubernetes</th><th class="col-uptime">Uptime</th><th>Talos</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Nodes}}
+      <tr>
+        <td>
+          <a class="row-link" href="/nodes/{{.Name}}">{{.Name}}</a>
+          <div class="cell-sub mono">{{fallback .IP "–"}}</div>
+        </td>
+        <td>{{range .Roles}}<span class="badge {{badgeClass .}}">{{.}}</span>{{end}}</td>
+        <td>
+          <span class="status-cell"><span class="dot {{if .Up}}dot-ok{{else}}dot-down{{end}}"></span>{{if .Up}}up{{else}}down{{end}}</span>
+          {{if .RebootedAgo}}<div class="cell-sub mono">rebooted {{.RebootedAgo}} ago</div>{{end}}
+        </td>
+        <td class="cell-wrap">
+          {{fallback .CPUModel "–"}}
+          {{if .Cores}}<div class="cell-sub mono">{{.Cores}}c / {{.Threads}}t</div>{{end}}
+        </td>
+        <td class="mono">
+          {{if .HasCPU}}
+          <span class="cell-bar"><span style="width:{{.LoadPct}}%"></span></span>
+          {{printf "%.1f" .CPUPercent}}%
+          {{if .Threads}}<div class="cell-sub">{{printf "%.1f" .LoadThreads}} / {{.Threads}} threads</div>{{end}}
+          {{else}}–{{end}}
+        </td>
+        <td class="mono col-memory">
+          {{fallback .RAM "–"}}
+          {{if .MemDIMMs}}<div class="cell-sub">{{.MemDIMMs}} {{plural .MemDIMMs "DIMM" "DIMMs"}}</div>{{end}}
+        </td>
+        <td class="mono col-storage">
+          {{fallback .Storage "–"}}
+          {{if .Disks}}<div class="cell-sub">{{.Disks}} {{plural .Disks "disk" "disks"}}</div>{{end}}
+        </td>
+        <td class="mono col-temp">{{fallback .KubeVersion "–"}}</td>
+        <td class="mono col-uptime">{{fallback .Uptime "–"}}</td>
+        <td class="mono">{{fallback .TalosVersion "–"}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">No nodes discovered yet. In-cluster: check the service account RBAC
+  (get/list/watch on <code>nodes</code>). Locally: check <code>~/.kube/config</code> or
+  <code>KUBECONFIG</code>.</div>
+  {{end}}
+</div>
+
+</div>
+{{end}}

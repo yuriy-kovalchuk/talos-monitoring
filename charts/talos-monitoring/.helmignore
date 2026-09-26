@@ -1,0 +1,21 @@
+# Patterns to ignore when building packages.
+*.tgz
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+.*.swp
+*.bak
+*.tmp
+*.orig
+tmp/
+temp/
+*~
+.DS_Store
+.idea/
+*.iml
+.vscode/

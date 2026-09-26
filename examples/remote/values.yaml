@@ -1,0 +1,23 @@
+# Example overrides for a stable install. Every key here is optional — the
+# chart defaults are safe (no monitoring CRDs).
+
+# The endpoint is unauthenticated by design and /metrics carries hardware
+# identifiers (serials, UUIDs, WWIDs). Restrict network access to the pod
+# yourself — the chart ships no NetworkPolicy; use whatever policy mechanism
+# your CNI enforces (k8s NetworkPolicy, CiliumNetworkPolicy, …).
+
+# Wire into Prometheus Operator if the cluster runs one:
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  labels:
+    release: prometheus
+
+# Ship the bundled Grafana dashboards (one ConfigMap per grafana/*.json)
+# for sidecar discovery:
+grafana:
+  enabled: true
+  # Grafana folder — the k8s-sidecar copies the dashboard to this directory
+  # and a provider with foldersFromFilesStructure makes the last path element
+  # the folder name:
+  # sidecarTargetDirectory: /tmp/dashboards/Talos

@@ -1,0 +1,204 @@
+{{define "node_storage-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Storage</div>
+  <h1>Storage · {{.Node.Name}}</h1>
+</div>
+
+{{/* The page reads bottom-up through the storage stack: physical device, the
+     traffic on it, the Talos volume above it, the filesystem on that, and the
+     PersistentVolume Kubernetes attached on top. Each card sits on the one
+     before it, which is the order an operator already thinks in. */}}
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Local capacity</div>
+    <div class="stat-value mono">{{fallback .StorageSummary.Capacity "–"}}<span class="stat-sub">{{.StorageSummary.Disks}} {{plural .StorageSummary.Disks "disk" "disks"}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Busiest device</div>
+    <div class="stat-value mono">{{if .StorageSummary.HasBusiest}}{{.StorageSummary.BusiestDevice}}{{else}}–{{end}}<span class="stat-sub">{{if .StorageSummary.HasBusiest}}{{.StorageSummary.BusiestBusy}} of uptime with I/O in flight{{else}}no I/O data{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Talos volumes</div>
+    <div class="stat-value{{if not .StorageSummary.VolumesNotReady}} ok{{end}}">{{.StorageSummary.VolumesNotReady}}<span class="stat-sub">not ready, of {{.StorageSummary.VolumesTotal}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">PersistentVolumes</div>
+    <div class="stat-value">{{.StorageSummary.PVs}}<span class="stat-sub">{{if .StorageSummary.PVFullest}}fullest {{.StorageSummary.PVFullest}} at {{.StorageSummary.PVFullestPct}}%{{else}}none attached{{end}}</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Disks</span>
+    <span class="card-sub">physical block devices</span>
+  </div>
+  {{if .Disks}}
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr><th>Device</th><th>Attachment</th><th>Size</th><th>Model</th><th>Serial</th><th>Transport</th><th>Media</th><th>WWID</th></tr>
+    </thead>
+    <tbody>
+      {{range .Disks}}
+      <tr>
+        <td class="mono">{{.Device}}</td>
+        <td><span class="badge {{if eq .Attachment "local"}}badge-cp{{else}}badge-w{{end}}">{{.Attachment}}</span></td>
+        <td class="mono">{{fallback .Size "–"}}</td>
+        <td>{{fallback .Model "–"}}</td>
+        <td class="mono">{{fallback .Serial "–"}}</td>
+        <td class="mono">{{fallback .Transport "–"}}</td>
+        <td>{{.Media}}</td>
+        <td class="mono">{{fallback .WWID "–"}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <div class="card-foot mono">{{.DisksLocal}} local · {{.DisksTotal}}{{if .DisksNetwork}} · {{.DisksNetwork}} network{{end}}{{if .DisksVirtual}} · {{.DisksVirtual}} virtual{{end}}</div>
+  {{else}}
+  <div class="empty">No disk data yet — the <code>block</code> collector is disabled, or the
+  node has not been scraped yet.</div>
+  {{end}}
+</div>
+
+{{template "storage-live" .}}
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/storage), swapped with
+     outerHTML. The disk inventory above is static and stays outside. */}}
+{{define "storage-live"}}
+<div id="storage-live" hx-get="/partials/nodes/{{.Node.Name}}/storage"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+
+{{if .DiskIO}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Block I/O</span>
+    <span class="card-sub mono">{{len .DiskIO}} {{plural (len .DiskIO) "device" "devices"}} · totals since boot</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Device</th><th>Read</th><th>Written</th><th>Reads</th><th>Writes</th><th>Busy</th><th>In flight</th></tr></thead>
+    <tbody>
+      {{range .DiskIO}}
+      <tr>
+        <td class="mono">{{.Device}}<div class="cell-sub">{{.Kind}}</div></td>
+        <td class="mono">{{.Read}}</td>
+        <td class="mono">{{.Written}}</td>
+        <td class="mono">{{.Reads}}</td>
+        <td class="mono">{{.Writes}}</td>
+        <td class="mono">{{fallback .Busy "–"}}</td>
+        <td class="mono">{{.InFlight}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <div class="card-foot">Cumulative since boot, not a rate — a partition's counters are also
+  counted in its parent, so these do not sum. For throughput use
+  <code>rate(talos_block_io_read_bytes_total[5m])</code> joined on
+  <code>talos_block_io_info{kind="disk"}</code>.</div>
+</div>
+{{end}}
+
+{{if .VolumeLayer.Available}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Talos volumes</span>
+    <span class="card-sub mono">{{if .VolumeLayer.NotReady}}{{.VolumeLayer.NotReady}} NOT READY · {{end}}{{if .VolumeLayer.SystemDisk}}system disk {{.VolumeLayer.SystemDisk}}{{end}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Volume</th><th>Phase</th><th>Size</th><th>Filesystem</th><th>Location</th></tr></thead>
+    <tbody>
+      {{range .VolumeLayer.Volumes}}
+      <tr>
+        <td class="mono">{{.ID}}
+          <div class="cell-sub">{{.Type}}{{if .Encrypted}} · {{.Provider}}{{end}}</div>
+        </td>
+        <td><span class="pill pill-{{if .Ready}}ok{{else}}down{{end}}"><span class="pill-dot"></span>{{.Phase}}</span>
+          {{if .Error}}<div class="cell-sub pill-warn-text">{{.Error}}</div>{{end}}
+          {{if .FailedSync}}<div class="cell-sub pill-warn-text">{{.FailedSync}} encryption {{plural .FailedSync "key" "keys"}} failed to sync</div>{{end}}
+        </td>
+        <td class="mono">{{fallback .Size "–"}}</td>
+        <td class="mono">{{fallback .Filesystem "–"}}</td>
+        <td class="mono">{{fallback .Location "–"}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{if .VolumeLayer.Pseudo}}
+  <div class="card-foot">{{.VolumeLayer.Pseudo}} healthy directory, overlay and symlink
+  {{plural .VolumeLayer.Pseudo "volume" "volumes"}} hidden — Talos models those here too,
+  and they are permanently ready. One that failed would be listed above.</div>
+  {{end}}
+</div>
+{{end}}
+
+{{if .Filesystems}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Filesystems</span>
+    <span class="card-sub mono">the node's own storage</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Mount</th><th>Used</th><th>Size</th><th>Available</th><th>Device</th></tr></thead>
+    <tbody>
+      {{range .Filesystems}}
+      <tr>
+        <td class="mono">{{.MountPoint}}</td>
+        <td class="mono">
+          <span class="cell-bar"><span style="width:{{.UsedPct}}%"></span></span>
+          {{.UsedPct}}%
+          <div class="cell-sub">{{.Used}}</div>
+        </td>
+        <td class="mono">{{.Size}}</td>
+        <td class="mono">{{.Avail}}</td>
+        <td class="mono">{{fallback .Device "–"}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{if .Volumes}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>PersistentVolumes</span>
+    <span class="card-sub mono">{{len .Volumes}} mounted · fullest first</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead>
+      <tr><th>Claim</th><th>Used</th><th>Size</th><th>Requested</th><th>Class</th><th>Backing</th></tr>
+    </thead>
+    <tbody>
+      {{range .Volumes}}
+      <tr>
+        <td>
+          {{.Label}}
+          {{if not .Named}}<div class="cell-sub">no matching PersistentVolume</div>{{end}}
+        </td>
+        <td class="mono">
+          <span class="cell-bar"><span style="width:{{.UsedPct}}%"></span></span>
+          {{.UsedPct}}%
+          <div class="cell-sub">{{.Used}}</div>
+        </td>
+        <td class="mono">{{.Size}}</td>
+        <td class="mono">{{fallback .Requested "–"}}</td>
+        <td class="mono">{{fallback .StorageClass "–"}}</td>
+        <td class="mono">{{fallback .Device "–"}}<div class="cell-sub">{{fallback .Kind "–"}}</div></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+</div>
+{{end}}

@@ -1,0 +1,1017 @@
+/* talos-monitoring dashboard dark theme
+ *
+ * Design tokens follow the talos.dev "Facets" system (Sidero Labs):
+ * teal accent, neutral dark base, hairline borders, 8px radii,
+ * Manrope for UI text, JetBrains Mono for technical values.
+ */
+
+:root {
+  /* Facets palette (rgb triplets) */
+  --teal: 2 128 125;
+  --teal-bright: 45 212 191;
+  --bg: 6 11 16;
+  --surface: 255 255 255;
+  --hairline: 233 235 237;
+  --text: 233 235 237;
+  --amber: 251 191 36;
+  --red: 248 113 113;
+
+  --radius: 8px;
+  --topbar-h: 56px; /* sticky header height; the sidebar offsets against it */
+  --shadow: 0 1px 10px 0 rgb(53 58 62 / 6%), 0 2px 4px 0 rgb(53 58 62 / 8%);
+
+  --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: rgb(var(--teal-bright));
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: rgb(var(--surface) / 6%);
+  border: 1px solid rgb(var(--hairline) / 10%);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(var(--text) / 50%);
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  /* Wraps to a second row below ~594px instead of forcing the page 508px
+     wide: brand and controls have a combined min-content the bar cannot
+     shrink under, and a fixed height used to wrap them in place. */
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-height: var(--topbar-h);
+  padding: 8px 20px;
+  background: rgb(var(--bg) / 85%);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgb(var(--hairline) / 10%);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: rgb(var(--text));
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand svg {
+  flex: none;
+}
+
+.version-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: rgb(var(--text) / 55%);
+  border: 1px solid rgb(var(--hairline) / 12%);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Status pill */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--text) / 75%);
+  border: 1px solid rgb(var(--hairline) / 12%);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--hairline) / 30%);
+}
+
+.pill-ok .pill-dot {
+  background: rgb(var(--teal-bright));
+  box-shadow: 0 0 6px rgb(var(--teal-bright) / 60%);
+}
+
+.pill-warn .pill-dot {
+  background: rgb(var(--amber));
+}
+
+.pill-down .pill-dot {
+  background: rgb(var(--red));
+}
+
+/* Buttons (solid + ghost, talos.dev style) */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+}
+
+.btn:hover {
+  text-decoration: none;
+}
+
+.btn-ghost {
+  border: 1px solid rgb(var(--hairline) / 15%);
+  color: rgb(var(--text));
+  background: transparent;
+}
+
+.btn-ghost:hover {
+  background: rgb(var(--surface) / 5%);
+}
+
+.btn-solid {
+  border: 1px solid rgb(var(--teal) / 60%);
+  background: rgb(var(--teal));
+  color: #f0faf8;
+}
+
+/* ── Shell: sidebar + content ────────────────────────────────────────── */
+
+.shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: calc(100vh - var(--topbar-h));
+}
+
+.sidebar {
+  position: sticky;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 12px;
+  border-right: 1px solid rgb(var(--hairline) / 10%);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  color: rgb(var(--text) / 70%);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+a.nav-link:hover {
+  background: rgb(var(--surface) / 4%);
+  color: rgb(var(--text));
+  text-decoration: none;
+}
+
+.nav-link.active {
+  border-left-color: rgb(var(--teal));
+  background: rgb(var(--teal) / 12%);
+  color: rgb(var(--text));
+}
+
+/* ── Node switcher (top of node pages) ──────────────────────────── */
+
+/* Node switcher — lives in the header, beside the status pill. Sized to match
+   it rather than the page body it used to sit in. */
+.node-switch {
+  display: flex;
+  align-items: center;
+}
+
+/* Visually hidden but announced: the select carries its own aria-label, and
+   the header has no room for a visible one. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.node-switch select {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--text) / 75%);
+  background: rgb(var(--surface) / 4%);
+  border: 1px solid rgb(var(--hairline) / 15%);
+  border-radius: var(--radius);
+  padding: 4px 26px 4px 10px;
+  cursor: pointer;
+  /* Chevron drawn inline so the control needs no extra request and no
+     external asset (the CSP allows data: images). */
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 13px;
+}
+
+.node-switch select:hover {
+  color: rgb(var(--text));
+  border-color: rgb(var(--hairline) / 30%);
+}
+
+.node-switch select:focus-visible {
+  outline: 2px solid rgb(var(--teal));
+  outline-offset: 1px;
+}
+
+.nav-muted {
+  font-size: 12px;
+  color: rgb(var(--text) / 45%);
+  padding: 4px 12px;
+}
+
+.card-foot {
+  margin-top: 12px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid rgb(var(--hairline) / 12%);
+  font-size: 12.5px;
+  color: rgb(var(--text) / 60%);
+}
+
+.muted {
+  color: rgb(var(--text) / 50%);
+}
+
+.content {
+  /* min-width: 0 matters: this is a grid item, and a grid item's automatic
+     min-width is its min-content size. A nowrap table inside would otherwise
+     push the column past the viewport and scroll the whole page sideways on
+     phones; with 0 the inner overflow-x:auto wrappers get to do their job. */
+  min-width: 0;
+  width: 100%;
+  max-width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 24px 28px 40px;
+}
+
+.page-head {
+  margin-bottom: 20px;
+}
+
+.page-head h1 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.crumb {
+  color: rgb(var(--text) / 50%);
+}
+
+.crumb:hover {
+  color: rgb(var(--teal-bright));
+}
+
+/* ── Stat cards ──────────────────────────────────────────────────────── */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background: rgb(var(--surface) / 3%);
+  border: 1px solid rgb(var(--hairline) / 10%);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(var(--text) / 50%);
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.stat-value.mono {
+  font-size: 19px;
+  font-weight: 500;
+  padding-top: 4px;
+}
+
+.stat-value.ok {
+  color: rgb(var(--teal-bright));
+}
+
+.stat-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: rgb(var(--text) / 45%);
+}
+
+/* ── Cards & tables ──────────────────────────────────────────────────── */
+
+.card {
+  background: rgb(var(--surface) / 3%);
+  border: 1px solid rgb(var(--hairline) / 10%);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgb(var(--hairline) / 10%);
+}
+
+.card-head .link {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgb(var(--hairline) / 8%);
+}
+
+thead th {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgb(var(--text) / 50%);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: rgb(var(--surface) / 2.5%);
+}
+
+.row-link {
+  color: rgb(var(--text));
+  font-weight: 600;
+}
+
+.row-link:hover {
+  color: rgb(var(--teal-bright));
+  text-decoration: underline;
+}
+
+/* Key/value tables (node detail, about) */
+
+table.kv th {
+  /* Size the label column to the longest label instead of always spending
+     160px, which was 43% of a phone-width card. */
+  width: max-content;
+  max-width: 160px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgb(var(--text) / 50%);
+}
+
+/* Badges */
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-right: 4px;
+}
+
+.badge-cp {
+  color: rgb(var(--teal-bright));
+  border-color: rgb(var(--teal) / 45%);
+  background: rgb(var(--teal) / 12%);
+}
+
+.badge-w {
+  color: rgb(var(--text) / 80%);
+  border-color: rgb(var(--hairline) / 18%);
+  background: rgb(var(--surface) / 5%);
+}
+
+/* Status */
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: rgb(var(--text) / 70%);
+  white-space: nowrap;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dot-ok {
+  background: rgb(var(--teal-bright));
+  box-shadow: 0 0 6px rgb(var(--teal-bright) / 60%);
+}
+
+.dot-down {
+  background: rgb(var(--red));
+}
+
+/* Misc */
+
+.empty {
+  padding: 24px 16px;
+  color: rgb(var(--text) / 55%);
+  font-size: 13px;
+}
+
+/* Marks a card that refreshes itself. Every self-refreshing card carries one,
+   which is what the inconsistent "Live ·" title prefix used to signal on some
+   cards and not others. Animation is decorative: it degrades to a static dot
+   under prefers-reduced-motion, and the dot itself still reads as a marker. */
+.live-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: rgb(var(--teal-bright));
+  vertical-align: middle;
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none } }
+
+/* One long value filling a card: the schematic id (64 hex chars) and the
+   kernel command line (~200 chars). Breaks anywhere, so it wraps inside the
+   card instead of scrolling the page sideways. */
+.card-text {
+  padding: 14px 16px 16px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: rgb(var(--text) / 75%);
+  overflow-wrap: anywhere;
+}
+
+.foot {
+  margin-top: 28px;
+  font-size: 12px;
+  color: rgb(var(--text) / 35%);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+    /* Short pages would otherwise stretch the strip row to fill the
+       min-height and center the links in dead space; keep the rows at
+       content size and let any slack fall below the page. */
+    align-content: start;
+  }
+
+  /* One horizontally scrollable strip instead of the four side-by-side link
+     columns: the old layout took 290-330px of vertical space (the 7-link
+     Hardware group alone is 256px) before any content on a phone. */
+  .sidebar {
+    position: static;
+    height: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    padding: 6px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid rgb(var(--hairline) / 10%);
+  }
+
+  .sidebar > div {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: none;
+    gap: 2px;
+  }
+
+  .sidebar > div + div {
+    margin-left: 14px;
+    padding-left: 14px;
+    border-left: 1px solid rgb(var(--hairline) / 10%);
+  }
+
+  .sidebar .eyebrow {
+    display: none;
+  }
+
+  .sidebar .nav-link {
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+
+  .sidebar .nav-link.active {
+    border-left-color: transparent;
+    border-bottom-color: rgb(var(--teal));
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Large displays: the content column widens and the big numbers step up one
+   notch, so a 2560px monitor is not a 1280px page with more background
+   around it. 1400px still leaves the fleet table comfortable (it needs
+   ~970px for all ten columns), and the wider cell-sub cap below stops long
+   secondary labels wrapping where there is now room. */
+@media (min-width: 1800px) {
+  .page-head h1 {
+    font-size: 22px;
+  }
+
+  .stat-value {
+    font-size: 28px;
+  }
+
+  .stat-value.mono {
+    font-size: 21px;
+  }
+
+  .content {
+    max-width: min(1400px, 100%);
+  }
+
+  .table-fleet .cell-sub {
+    max-width: 22ch;
+  }
+}
+
+.card-sub {
+  font-size: 11.5px;
+  color: rgb(var(--text) / 55%);
+}
+
+/* Node overview: the category cards that double as navigation.
+   .stats-5 exists for a five-card row; the live grid is .stats-6 below. */
+.stats-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+/* 10 category cards with a GPU, 9 without. Five-up fills two rows at 10,
+   and the trailing card's data-fill spans the remainder at 9. The old six-up
+   left four of six slots empty on the second row at every width. */
+.stats-6 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-link:hover {
+  border-color: rgb(var(--teal-bright) / 40%);
+}
+
+.card-link-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding-top: 2px;
+}
+
+.card-link-more {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(var(--teal-bright));
+}
+
+@media (max-width: 1040px) {
+  .stats-5,
+  .stats-6 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .stats-5,
+  .stats-6 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Fill the last row of a stat grid whose card count does not divide the
+   column count, instead of leaving trailing slots empty. The templates mark
+   the trailing card(s) with one of these hooks:
+   2      span two tracks in every mode of the grid (dashboard GPU card:
+          4-up at >=901px, 2-up below, where the span is a full row)
+   2wide  span two only while the grid is 4-up (dashboard, six-card mode,
+          where the trailing pair each takes half the row)
+   node   span two, or three in the 3-up band (node overview, nine cards)
+   mid    span three in the 3-up band only (node overview, ten cards, where
+          the single trailing card would otherwise sit alone on a row of 3) */
+[data-fill="2"] {
+  grid-column: span 2;
+}
+
+@media (min-width: 901px) {
+  [data-fill="2wide"] {
+    grid-column: span 2;
+  }
+}
+
+.stats-6 [data-fill="node"] {
+  grid-column: span 2;
+}
+
+@media (min-width: 701px) and (max-width: 1040px) {
+  .stats-6 [data-fill="node"] {
+    grid-column: span 3;
+  }
+
+  [data-fill="mid"] {
+    grid-column: span 3;
+  }
+}
+
+/* Memory breakdown bar: used / cache+buffers / free, summing to total. */
+.mem-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  margin: 16px 16px 10px;
+  width: calc(100% - 32px);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgb(var(--text) / 8%);
+}
+
+.mem-seg {
+  display: block;
+  height: 12px;
+}
+
+.mem-used {
+  background: rgb(var(--teal-bright));
+}
+
+.mem-cache {
+  background: rgb(var(--teal) / 65%);
+}
+
+.mem-free {
+  background: rgb(var(--text) / 12%);
+}
+
+.mem-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 0 16px 14px;
+  font-size: 11.5px;
+  color: rgb(var(--text) / 62%);
+}
+
+.mem-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* PCI page: one collapsible card per device class. */
+details.card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.card > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.card > summary::after {
+  content: "\203A";
+  margin-left: auto;
+  padding-left: 10px;
+  color: rgb(var(--text) / 40%);
+  transform: rotate(90deg);
+}
+
+details.card[open] > summary::after {
+  transform: rotate(-90deg);
+}
+
+.pill-warn-text {
+  color: rgb(var(--amber));
+}
+
+/* An interface with no carrier stays visible but recedes: it is real
+   configuration, so hiding it would misrepresent the machine. */
+.row-idle td {
+  color: rgb(var(--text) / 45%);
+}
+
+/* Network throughput: direction-coded so a glance reads in versus out. */
+.rate-in {
+  color: rgb(var(--teal-bright));
+}
+
+.rate-out {
+  margin-left: 14px;
+  color: rgb(167 139 250);
+}
+
+/* Fleet table (dashboard): ten narrow columns inside a 1100px content column,
+   so the default 16px cell padding alone would spend 320px. Tighten it, keep
+   identity cells on one line, and let only the long CPU name wrap. */
+.table-fleet th,
+.table-fleet td {
+  padding: 9px 10px;
+  white-space: nowrap;
+}
+
+.table-fleet .cell-wrap,
+.table-fleet .cell-sub {
+  white-space: normal;
+}
+
+.table-fleet .cell-sub {
+  /* Secondary lines are the widest thing in several columns
+     ("coretemp/Package id 0"). Capping them makes the text wrap instead of
+     stretching the column, which is what pushed the row past the content width. */
+  max-width: 14ch;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: rgb(var(--text) / 45%);
+  overflow-wrap: anywhere;
+}
+
+.table-fleet .cell-bar {
+  display: inline-block;
+  width: 46px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(var(--text) / 12%);
+  vertical-align: middle;
+}
+
+.table-fleet .cell-bar > span {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(var(--teal-bright));
+}
+
+/* Shed the lowest-value columns before the table starts scrolling. The
+   breakpoints follow the actual budget: content is min(1100, vw - 224) - 56
+   below 1800px (min(1400, vw - 224) - 56 above), the sidebar collapses at
+   900px, and the full table needs ~970px. */
+@media (max-width: 1250px) {
+  .table-fleet .col-storage {
+    display: none;
+  }
+}
+
+@media (max-width: 1150px) {
+  .table-fleet .col-temp {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .table-fleet .col-memory {
+    display: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .table-fleet .col-uptime {
+    display: none;
+  }
+}
+
+/* Stacked mode bar: one segment per /proc/stat mode, widths summing to 100%.
+   Three tones only — own work, waiting on something else, idle — because the
+   question the bar answers is which of those three a busy node is doing. */
+.mode-bar {
+  display: flex;
+  height: 22px;
+  margin: 16px 16px 10px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgb(var(--surface) / 8%);
+}
+
+.mode-seg { min-width: 1px }
+.mode-busy { background: rgb(var(--teal-bright) / 80%) }
+.mode-wait { background: rgb(var(--amber)) }
+.mode-idle { background: rgb(var(--hairline) / 22%) }
+
+.mode-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 0 16px 14px;
+  font-size: 12px;
+  color: rgb(var(--text) / 70%);
+}
+
+.mode-key { display: inline-flex; align-items: center; gap: 6px }
+
+.mode-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* Per-core usage grid. Replaces the removed uPlot usage panel: one bar per
+   hardware thread, so it stays readable from 4 cores to 128 without a chart
+   library. Bars grow from the bottom, which is what makes a hot core legible
+   at a glance in a wall of them. */
+.core-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 6px 4px;
+  padding: 16px;
+}
+
+.core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.core-bar {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 46px;
+  background: rgb(var(--surface) / 8%);
+  border: 1px solid rgb(var(--hairline) / 12%);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.core-bar > span {
+  width: 100%;
+  min-height: 1px;
+  background: rgb(var(--teal-bright) / 75%);
+}
+
+.core-n {
+  font-size: 10px;
+  color: rgb(var(--text) / 45%);
+  font-variant-numeric: tabular-nums;
+}
+
+.core-pct {
+  font-size: 10.5px;
+  color: rgb(var(--text) / 80%);
+  font-variant-numeric: tabular-nums;
+}
+
+.core-f {
+  font-size: 9.5px;
+  color: rgb(var(--text) / 40%);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stale-connection banner. Hidden until app.js sets data-stale on <html>
+   after a failed poll; htmx keeps the last good content, so the page would
+   otherwise look live while frozen. */
+#stale-banner {
+  display: none;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--amber));
+  background: rgb(var(--amber) / 10%);
+  border-bottom: 1px solid rgb(var(--amber) / 25%);
+}
+
+[data-stale] #stale-banner {
+  display: block;
+}
+
+/* Dim the failing region itself, so the banner is not the only cue. The
+   transition lives on the base state so the dim fades both ways. */
+[hx-trigger] {
+  transition: opacity 200ms ease;
+}
+
+[data-stale]:not(:root) {
+  opacity: 0.65;
+}

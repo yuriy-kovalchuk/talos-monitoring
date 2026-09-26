@@ -1,0 +1,83 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>talos-monitoring{{with .Title}} · {{.}}{{end}}</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%2302807D" d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>'>
+<link rel="stylesheet" href="/static/css/fonts.css?v={{.AssetV}}">
+<link rel="stylesheet" href="/static/css/style.css?v={{.AssetV}}">
+<script src="/static/js/htmx.min.js?v={{.AssetV}}" defer></script>
+<script src="/static/js/app.js?v={{.AssetV}}" defer></script>
+</head>
+<body>
+{{/* Shown only while [data-stale] is set on <html>: htmx keeps the last good
+     content on a failed poll, so without this the page looks live when it is
+     frozen. app.js inserts the message on failure; the region must exist
+     from page load for the aria-live announcement to fire. */}}
+<div id="stale-banner" role="status" aria-live="polite"></div>
+<header class="topbar">
+  <a class="brand" href="/">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(2 128 125)" stroke-width="2" aria-hidden="true"><path d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>
+    <span>talos-monitoring</span>
+    <span class="version-chip">v{{.Version}}</span>
+  </a>
+  <div class="topbar-right">
+    {{/* The node switcher lives in the header so it is reachable from every
+         page, and sits beside the node count it relates to. Rendered only
+         where switching nodes means something. */}}
+    {{if .HWBase}}{{template "node-switch" .}}{{end}}
+    {{/* aria-live belongs on a small status element like this one, not on the
+         big polled regions: those re-render wholesale, so announcing them
+         would read the whole page aloud every 15 s. */}}
+    <div id="status-pill" class="pill" role="status" aria-live="polite"
+         hx-get="/partials/status" hx-trigger="load, every 30s" hx-swap="outerHTML">
+      <span class="pill-dot"></span>checking…
+    </div>
+    <a class="btn btn-ghost" href="/metrics">Metrics</a>
+  </div>
+</header>
+<div class="shell">
+  <nav class="sidebar" aria-label="Main">
+    <div>
+      <div class="eyebrow">Overview</div>
+      <a class="nav-link{{if eq .Page "overview"}} active{{end}}" href="/">Dashboard</a>
+      <a class="nav-link{{if eq .Page "nodes"}} active{{end}}" href="/nodes">Nodes</a>
+    </div>
+    <div>
+      <div class="eyebrow">System</div>
+      {{if .HWBase}}
+      <a class="nav-link{{if and (eq .Page "node") (eq .Section "")}} active{{end}}" href="{{.HWBase}}">Overview</a>
+      <a class="nav-link{{if eq .Section "health"}} active{{end}}" href="{{.HWBase}}/health">Health</a>
+      <a class="nav-link{{if eq .Section "identity"}} active{{end}}" href="{{.HWBase}}/identity">Image</a>
+      <a class="nav-link{{if eq .Section "kernel"}} active{{end}}" href="{{.HWBase}}/kernel">Kernel</a>
+      {{else}}
+      <div class="nav-muted">no nodes discovered</div>
+      {{end}}
+    </div>
+    <div>
+      <div class="eyebrow">Hardware</div>
+      {{if .HWBase}}
+      <a class="nav-link{{if eq .Section "cpu"}} active{{end}}" href="{{.HWBase}}/cpu">CPU</a>
+      <a class="nav-link{{if eq .Section "memory"}} active{{end}}" href="{{.HWBase}}/memory">Memory</a>
+      <a class="nav-link{{if eq .Section "storage"}} active{{end}}" href="{{.HWBase}}/storage">Storage</a>
+      <a class="nav-link{{if eq .Section "links"}} active{{end}}" href="{{.HWBase}}/links">Network</a>
+      <a class="nav-link{{if eq .Section "gpu"}} active{{end}}" href="{{.HWBase}}/gpu">GPU</a>
+      <a class="nav-link{{if eq .Section "pci"}} active{{end}}" href="{{.HWBase}}/pci">PCI</a>
+      <a class="nav-link{{if eq .Section "sensors"}} active{{end}}" href="{{.HWBase}}/sensors">Sensors</a>
+      {{else}}
+      <div class="nav-muted">no nodes discovered</div>
+      {{end}}
+    </div>
+    <div>
+      <div class="eyebrow">Exporter</div>
+      <a class="nav-link{{if eq .Page "about"}} active{{end}}" href="/about">About</a>
+    </div>
+  </nav>
+  <main class="content">
+    {{.Inner}}
+    <footer class="foot">talos-monitoring v{{.Version}} · commit {{.Commit}} · built {{.BuildDate}}</footer>
+  </main>
+</div>
+</body>
+</html>{{end}}

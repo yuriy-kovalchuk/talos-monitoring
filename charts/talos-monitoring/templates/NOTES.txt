@@ -1,0 +1,29 @@
+talos-monitoring {{ .Chart.Version }} is installed in namespace {{ .Release.Namespace }}.
+
+1. Check the prerequisite first. Every node's machineconfig needs
+   machine.features/kubernetesTalosAPIAccess enabled, with allowedRoles
+   covering {{ .Values.talos.roles | join ", " }} and allowedKubernetesNamespaces
+   including "{{ .Release.Namespace }}" (see README > Prerequisites).
+   Until then the pod stays 0/1 Ready and logs "talosconfig unavailable,
+   retrying" — that is expected, not a crash.
+
+2. Watch the pod come up:
+   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/name={{ include "talos-monitoring.name" . }}
+   {{- if not (has "os:admin" .Values.talos.roles) }}
+
+   Note: the requested roles do not include os:admin, so the file-based
+   collectors (sensors, GPU, PCIe link state, CPU frequency fallback, network
+   counters) self-disable.
+   {{- end }}
+
+3. Dashboard (unauthenticated — keep it cluster-internal):
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "talos-monitoring.fullname" . }} 8080:{{ .Values.service.port }}
+   open http://127.0.0.1:8080/
+
+4. Metrics:
+   http://{{ include "talos-monitoring.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/metrics
+
+WARNING: the endpoint is unauthenticated and carries chassis serials, system
+UUIDs, DIMM serials and disk WWIDs — it is reachable from the whole cluster.
+The chart ships no NetworkPolicy; restrict network access to the pod
+yourself.

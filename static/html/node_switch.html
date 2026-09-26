@@ -1,0 +1,15 @@
+{{define "node-switch"}}
+<div class="node-switch">
+  <label class="sr-only" for="node-select">Node</label>
+  {{/* No inline handler: the CSP is script-src 'self', which blocks
+       onchange="…". app.js wires this up. */}}
+  <select id="node-select" aria-label="Switch node">
+    {{/* On the cluster pages no node is current, so without this the browser
+         shows the first option as if it were selected. */}}
+    {{if not .Node}}<option value="" selected>Go to node…</option>{{end}}
+    {{range .Nodes}}
+    <option value="/nodes/{{.Name}}{{if $.Section}}/{{$.Section}}{{end}}"{{if and $.Node (eq .Name $.Node.Name)}} selected{{end}}>{{.Name}}</option>
+    {{end}}
+  </select>
+</div>
+{{end}}

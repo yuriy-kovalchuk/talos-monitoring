@@ -1,0 +1,98 @@
+{{define "node_kernel-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Kernel</div>
+  <h1>Kernel · {{.Node.Name}}</h1>
+</div>
+
+{{template "kernel-live" .}}
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/kernel). Tunables and modules
+     change on reboot, not during a run, so this refreshes on the slow cadence —
+     it exists so the page picks itself up after an upgrade. */}}
+{{define "kernel-live"}}
+<div id="kernel-live" hx-get="/partials/nodes/{{.Node.Name}}/kernel"
+     hx-trigger="every 60s" hx-swap="outerHTML">
+{{if .Kernel.Available}}
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Kernel</div>
+    <div class="stat-value mono">{{if .Identity.KernelVersion}}{{.Identity.KernelVersion}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.BootedEntry}}{{.Identity.BootedEntry}}{{else}}booted entry unknown{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Tunables</div>
+    <div class="stat-value">{{len .Kernel.Params}}<span class="stat-sub">{{.Kernel.Drifted}} differ from default</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Unsupported</div>
+    <div class="stat-value{{if not .Kernel.Unsupported}} ok{{end}}">{{.Kernel.Unsupported}}<span class="stat-sub">{{if .Kernel.Unsupported}}silently ignored by this kernel{{else}}every tunable took effect{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Modules</div>
+    <div class="stat-value">{{len .Kernel.Modules}}<span class="stat-sub">loaded</span></div>
+  </div>
+</div>
+
+{{if .Identity.Cmdline}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Command line</span>
+    <span class="card-sub">a machineconfig kernel argument the kernel ignored is only visible here</span>
+  </div>
+  <div class="card-text mono">{{.Identity.Cmdline}}</div>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Parameters</span>
+    <span class="card-sub mono">{{len .Kernel.Params}} tuned · {{.Kernel.Drifted}} differ from default{{if .Kernel.Unsupported}} · {{.Kernel.Unsupported}} UNSUPPORTED{{end}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Parameter</th><th>Current</th><th>Default</th></tr></thead>
+    <tbody>
+      {{range .Kernel.Params}}
+      <tr>
+        <td class="mono">{{.Name}}{{if .Unsupported}}<div class="cell-sub pill-warn-text">unsupported: the running kernel ignores this</div>{{end}}</td>
+        <td class="mono">{{if .Current}}{{.Current}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="mono">{{if .Drifted}}{{.Default}}{{else}}<span class="muted">same</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Loaded modules</span>
+    <span class="card-sub mono">{{len .Kernel.Modules}} {{plural (len .Kernel.Modules) "module" "modules"}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Module</th><th>State</th><th>Size</th><th>Used by</th></tr></thead>
+    <tbody>
+      {{range .Kernel.Modules}}
+      <tr>
+        <td class="mono">{{.Name}}</td>
+        <td class="mono">{{.State}}</td>
+        <td class="mono">{{.Size}}</td>
+        <td class="mono">{{.Refs}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Kernel</span></div>
+  <div class="empty">No kernel data yet. The <code>kernel</code> collector is disabled, or
+  it has not completed its first scrape.</div>
+</div>
+{{end}}
+</div>
+{{end}}

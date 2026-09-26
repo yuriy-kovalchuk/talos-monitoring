@@ -1,0 +1,39 @@
+{{define "nodes-content"}}
+<div class="page-head">
+  <div class="eyebrow">Overview</div>
+  <h1>Nodes</h1>
+</div>
+
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Discovered nodes</span></div>
+  {{if .Nodes}}
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>IP</th><th>Hostname</th><th>Role</th>
+        <th>OS / Arch</th><th>Kubelet</th><th>Talos</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Nodes}}
+      <tr>
+        <td><a class="row-link" href="/nodes/{{.Name}}">{{.Name}}</a></td>
+        <td class="mono">{{fallback .IP "–"}}</td>
+        <td>{{.Hostname}}</td>
+        <td>{{range .Roles}}<span class="badge {{badgeClass .}}">{{.}}</span>{{end}}</td>
+        <td class="mono">{{.OS}} / {{.Arch}}</td>
+        <td class="mono">{{fallback .KubeVersion "–"}}</td>
+        <td class="mono">{{fallback .TalosVersion "–"}}</td>
+        <td><span class="status-cell"><span class="dot {{if .Up}}dot-ok{{else}}dot-down{{end}}"></span>{{if .Up}}up{{else}}down{{end}}</span></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">No nodes discovered yet.</div>
+  {{end}}
+</div>
+{{end}}
+

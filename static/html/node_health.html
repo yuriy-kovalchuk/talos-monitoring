@@ -1,0 +1,130 @@
+{{define "node_health-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Health</div>
+  <h1>Health · {{.Node.Name}}</h1>
+</div>
+
+{{template "health-live" .}}
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/health), swapped with
+     outerHTML. Service state is the fastest-moving thing on the dashboard, so
+     this refreshes on the same 15s cadence as the other node sections. The
+     container renders even with no data, so a collector that starts reporting
+     later is picked up without a page reload. */}}
+{{define "health-live"}}
+<div id="health-live" hx-get="/partials/nodes/{{.Node.Name}}/health"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+{{if .Health.Available}}
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Machine stage</div>
+    <div class="stat-value mono">{{if .Health.HasStage}}{{.Health.Stage}}{{else}}–{{end}}<span class="stat-sub">{{if .Health.HasStage}}{{if .Health.Ready}}ready{{else}}not ready{{end}}{{else}}not reported{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Services healthy</div>
+    <div class="stat-value{{if not .Health.Unhealthy}} ok{{end}}">{{.Health.Healthy}}<span class="stat-sub">of {{.Health.Total}} {{plural .Health.Total "service" "services"}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Not healthy</div>
+    <div class="stat-value{{if not .Health.Unhealthy}} ok{{end}}">{{.Health.Unhealthy}}<span class="stat-sub">{{.Health.Failing}} failing · {{.Health.Stopped}} stopped</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Diagnostics</div>
+    <div class="stat-value{{if not .Health.Diagnostics}} ok{{end}}">{{len .Health.Diagnostics}}<span class="stat-sub">{{if .Health.Diagnostics}}warnings raised{{else}}none raised{{end}}</span></div>
+  </div>
+</div>
+
+{{if .Health.Diagnostics}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Diagnostics</span>
+    <span class="card-sub mono">{{len .Health.Diagnostics}} {{plural (len .Health.Diagnostics) "warning" "warnings"}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Warning</th><th>Message</th></tr></thead>
+    <tbody>
+      {{range .Health.Diagnostics}}
+      <tr>
+        <td class="mono"><a class="crumb" href="{{.URL}}" rel="noreferrer noopener" target="_blank">{{.ID}}</a></td>
+        <td>{{.Message}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{if .Health.Unmet}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Unmet conditions</span>
+    <span class="card-sub mono">machine not ready at stage {{.Health.Stage}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Condition</th><th>Reason</th></tr></thead>
+    <tbody>
+      {{range .Health.Unmet}}
+      <tr><td class="mono">{{.Name}}</td><td>{{.Reason}}</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{if .TimeSync.Available}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Clock</span>
+    <span class="card-sub mono">{{if .TimeSync.Synced}}synced{{else}}NOT synced{{end}}{{if .TimeSync.SyncDisabled}} · sync disabled in machineconfig{{end}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <tbody>
+      <tr><td>Talos ntpd</td><td class="mono">{{if .TimeSync.Synced}}synced{{else}}not synced{{end}}</td></tr>
+      <tr><td>Kernel<div class="cell-sub">STA_UNSYNC clear</div></td><td class="mono">{{if .TimeSync.KernelSynced}}synced{{else}}not synced{{end}}{{if .TimeSync.State}} · {{.TimeSync.State}}{{end}}</td></tr>
+      {{if .TimeSync.Offset}}
+      <tr><td>Offset</td><td class="mono">{{.TimeSync.Offset}}<div class="cell-sub">max error {{.TimeSync.MaxError}}</div></td></tr>
+      <tr><td>Oscillator drift</td><td class="mono">{{.TimeSync.DriftPPM}}</td></tr>
+      {{end}}
+      <tr><td>Clock steps<div class="cell-sub">since boot</div></td><td class="mono">{{.TimeSync.Epoch}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Services</span>
+    <span class="card-sub mono">{{.Health.Total}} {{plural .Health.Total "service" "services"}}{{if .Health.NoCheck}} · {{.Health.NoCheck}} without a health check{{end}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Service</th><th>State</th></tr></thead>
+    <tbody>
+      {{range .Health.Services}}
+      <tr>
+        <td class="mono">{{.Name}}</td>
+        <td><span class="pill pill-{{.Tone}}"><span class="pill-dot"></span>{{.State}}</span></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Health</span></div>
+  <div class="empty">No health data yet. The <code>health</code> collector is disabled, or
+  it has not completed its first scrape.</div>
+</div>
+{{end}}
+</div>
+{{end}}

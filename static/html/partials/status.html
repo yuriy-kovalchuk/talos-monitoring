@@ -1,0 +1,6 @@
+{{define "status"}}
+<div id="status-pill" class="pill {{if and (gt .Total 0) (eq .Up .Total)}}pill-ok{{else if gt .Up 0}}pill-warn{{else}}pill-down{{end}}"
+     hx-get="/partials/status" hx-trigger="every 30s" hx-swap="outerHTML">
+  <span class="pill-dot"></span>{{.Up}}/{{.Total}} nodes
+</div>
+{{end}}

@@ -1,0 +1,154 @@
+{{define "node-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / {{.Node.Name}}</div>
+  <h1>{{.Node.Name}}</h1>
+</div>
+
+{{template "node-live" .}}
+{{end}}
+
+{{/* The whole body refreshes: CPU, temperature and reachability all move, and
+     with the typed snapshot a re-render is a map lookup, not a cluster scan. */}}
+{{define "node-live"}}
+<div id="node-live" hx-get="/partials/nodes/{{.Node.Name}}/overview"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+
+{{/* Band 1 · node status. Deliberately NOT a subset of the category cards
+     below: these are whole-machine facts with no section of their own, and the
+     old strip repeated CPU and Memory from the cards two rows down. */}}
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Stage</div>
+    <div class="stat-value mono">{{if .Health.HasStage}}{{.Health.Stage}}{{else}}–{{end}}<span class="stat-sub">{{if .Health.HasStage}}{{if .Health.Ready}}ready{{else}}NOT ready{{end}}{{else}}not reported{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Services</div>
+    {{if .Health.Available}}
+    <div class="stat-value{{if not .Health.Unhealthy}} ok{{end}}">{{.Health.Healthy}}<span class="stat-sub">healthy of {{.Health.Total}}{{if .Health.Unhealthy}} · {{.Health.Unhealthy}} need attention{{end}}</span></div>
+    {{else}}<div class="stat-value">–</div>{{end}}
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Load</div>
+    {{if and .Status .Status.HasLoad}}
+    <div class="stat-value mono">{{.Status.Load}}<span class="stat-sub">1m / 5m / 15m · {{.Summary.Threads}}t</span></div>
+    {{else}}<div class="stat-value mono">–<span class="stat-sub">not reported</span></div>{{end}}
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Uptime</div>
+    <div class="stat-value mono">{{if .Status}}{{fallback .Status.Uptime "–"}}{{else}}–{{end}}<span class="stat-sub">{{if .TimeSync.Available}}clock {{if .TimeSync.Synced}}synced{{else}}NOT synced{{end}}{{else}}clock not reported{{end}}</span></div>
+  </div>
+</div>
+
+{{/* Band 2 · one machine card: identity and DMI, de-duplicated. */}}
+<div class="card" id="machine">
+  <div class="card-head">
+    <span class="eyebrow">Machine</span>
+    <span class="status-cell"><span class="dot {{if .Node.Up}}dot-ok{{else}}dot-down{{end}}"></span>{{if .Node.Up}}up{{else}}down{{end}}</span>
+  </div>
+  {{if and (not .System.Available) (not .Status)}}
+  <div class="empty">No machine data yet · the <code>hwinfo</code> and <code>nodeapi</code>
+  collectors are disabled, or the node has not been scraped yet. Kubernetes identity is
+  shown below.</div>
+  {{end}}
+  <table class="kv">
+    <tbody>
+      {{if .System.Available}}
+      <tr><th scope="row">Product</th><td>{{fallback .System.Manufacturer "–"}} {{.System.Product}}{{if .System.Version}} <span class="muted mono">{{.System.Version}}</span>{{end}}</td></tr>
+      {{end}}
+      {{if .Summary.Model}}
+      <tr><th scope="row">CPU</th><td>{{.Summary.Model}}
+        <span class="muted mono">{{if .Summary.Socket}}{{.Summary.Socket}} · {{end}}{{.Summary.Cores}}c / {{.Summary.Threads}}t{{if .Summary.MaxMHz}} · up to {{.Summary.MaxMHz}} MHz{{end}}</span></td></tr>
+      {{end}}
+      {{if .System.Available}}
+      <tr><th scope="row">Serial</th><td class="mono">{{fallback .System.SerialNumber "–"}}</td></tr>
+      <tr><th scope="row">UUID</th><td class="mono">{{fallback .System.UUID "–"}}</td></tr>
+      {{end}}
+      <tr><th scope="row">Address</th><td class="mono">{{fallback .Node.IP "–"}}{{if .Node.Hostname}} · {{.Node.Hostname}}{{end}}{{if .Node.OS}} · {{.Node.OS}}/{{.Node.Arch}}{{end}}</td></tr>
+      <tr><th scope="row">Versions</th><td class="mono">Talos {{fallback .Node.TalosVersion "–"}}{{if and .Status .Status.SHA}} <span class="muted">({{.Status.SHA}})</span>{{end}} · Kubernetes {{fallback .Node.KubeVersion "–"}}</td></tr>
+      {{if .Status}}
+      <tr><th scope="row">Booted</th><td>{{fallback .Status.Uptime "–"}} ago{{if .Status.Built}} <span class="muted mono">image built {{.Status.Built}}</span>{{end}}</td></tr>
+      <tr><th scope="row">Processes</th><td class="mono">{{.Status.Running}} running · {{.Status.Blocked}} blocked</td></tr>
+      {{if .Status.HasLoad}}<tr><th scope="row">Load average</th><td class="mono">{{.Status.Load}}<span class="muted"> &middot; 1m / 5m / 15m</span></td></tr>{{end}}
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+{{/* Band 3 · category summaries that double as navigation. */}}
+<div class="stats stats-6">
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/cpu">
+    <div class="stat-label">CPU</div>
+    <div class="card-link-body mono">
+      {{if .Summary.Model}}{{.Summary.Model}}<br>{{.Summary.Cores}}c / {{.Summary.Threads}}t{{if .Summary.MaxMHz}}<br>max {{.Summary.MaxMHz}} MHz{{end}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/memory">
+    <div class="stat-label">Memory</div>
+    <div class="card-link-body mono">
+      {{if .Summary.MemoryDIMMs}}{{.Summary.MemoryTotal}}<br>{{.Summary.MemoryDIMMs}} {{plural .Summary.MemoryDIMMs "DIMM" "DIMMs"}}{{if .Summary.MemorySpeed}}<br>{{.Summary.MemorySpeed}} MHz{{end}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/storage">
+    <div class="stat-label">Disks</div>
+    <div class="card-link-body mono">
+      {{if .Summary.DiskLocal}}{{.Summary.Storage}}<br>{{.Summary.DiskLocal}} local{{else}}no local disk{{end}}
+      {{if .Summary.DiskNetwork}}<br>+{{.Summary.DiskNetwork}} network{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/pci">
+    <div class="stat-label">PCI</div>
+    <div class="card-link-body mono">
+      {{if .Summary.PCIDevices}}{{.Summary.PCIDevices}} {{plural .Summary.PCIDevices "device" "devices"}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/links">
+    <div class="stat-label">Network</div>
+    <div class="card-link-body mono">
+      {{if .Summary.Links}}{{.Summary.LinksUp}} of {{.Summary.Links}} up<br>{{.Summary.Links}} {{plural .Summary.Links "NIC" "NICs"}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  {{if .GPUs}}
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/gpu">
+    <div class="stat-label">GPU</div>
+    <div class="card-link-body mono">
+      {{len .GPUs}} {{plural (len .GPUs) "card" "cards"}}{{range .GPUs}}{{if .HasVRAM}}<br>{{.Card}} {{.VRAMPct}}% VRAM{{end}}{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  {{end}}
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/kernel">
+    <div class="stat-label">Kernel</div>
+    <div class="card-link-body mono">
+      {{if .Kernel.Available}}{{len .Kernel.Params}} tunables<br>{{if .Kernel.Unsupported}}{{.Kernel.Unsupported}} unsupported{{else}}{{len .Kernel.Modules}} modules{{end}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/identity">
+    <div class="stat-label">Image</div>
+    <div class="card-link-body mono">
+      {{if .Identity.Available}}{{if .Identity.Schematic}}{{.Identity.SchematicShort}}<br>{{end}}{{len .Identity.Extensions}} {{plural (len .Identity.Extensions) "extension" "extensions"}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/health">
+    <div class="stat-label">Health</div>
+    <div class="card-link-body mono">
+      {{if .Health.Available}}{{.Health.Healthy}} of {{.Health.Total}} healthy<br>{{if .Health.Unhealthy}}{{.Health.Unhealthy}} need attention{{else if .Health.Diagnostics}}{{len .Health.Diagnostics}} {{plural (len .Health.Diagnostics) "warning" "warnings"}}{{else}}stage {{.Health.Stage}}{{end}}{{else}}no data yet{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/sensors" data-fill="{{if .GPUs}}mid{{else}}node{{end}}">
+    <div class="stat-label">Sensors</div>
+    <div class="card-link-body mono">
+      {{if .Summary.SensorKinds}}{{range .Summary.SensorKinds}}{{.Count}} {{.Kind}}<br>{{end}}{{else}}none readable{{end}}
+    </div>
+    <div class="card-link-more">View →</div>
+  </a>
+</div>
+</div>
+{{end}}

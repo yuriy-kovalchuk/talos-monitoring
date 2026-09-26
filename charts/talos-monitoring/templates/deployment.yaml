@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "talos-monitoring.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talos-monitoring.labels" . | nindent 4 }}
+spec:
+  # One replica by design: the scraper keeps per-node state in RAM, and a
+  # second replica would double the Talos API load for nothing.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "talos-monitoring.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "talos-monitoring.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "talos-monitoring.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: talos-monitoring
+          image: {{ include "talos-monitoring.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --listen
+            - ":{{ .Values.server.listenPort }}"
+            - --log-level
+            - {{ .Values.server.logLevel | quote }}
+            - --scrape-interval
+            - {{ .Values.scrape.interval | quote }}
+            - --inventory-interval
+            - {{ .Values.scrape.inventoryInterval | quote }}
+            - --collectors.block.enabled
+            - {{ .Values.collectors.block.enabled | quote }}
+            - --collectors.cpu.enabled
+            - {{ .Values.collectors.cpu.enabled | quote }}
+            - --collectors.diskio.enabled
+            - {{ .Values.collectors.diskio.enabled | quote }}
+            - --collectors.gpu.enabled
+            - {{ .Values.collectors.gpu.enabled | quote }}
+            - --collectors.health.enabled
+            - {{ .Values.collectors.health.enabled | quote }}
+            - --collectors.identity.enabled
+            - {{ .Values.collectors.identity.enabled | quote }}
+            - --collectors.kernel.enabled
+            - {{ .Values.collectors.kernel.enabled | quote }}
+            - --collectors.memory.enabled
+            - {{ .Values.collectors.memory.enabled | quote }}
+            - --collectors.network.enabled
+            - {{ .Values.collectors.network.enabled | quote }}
+            - --collectors.nodeapi.enabled
+            - {{ .Values.collectors.nodeapi.enabled | quote }}
+            - --collectors.pci.enabled
+            - {{ .Values.collectors.pci.enabled | quote }}
+            - --collectors.processor.enabled
+            - {{ .Values.collectors.processor.enabled | quote }}
+            - --collectors.sensors.enabled
+            - {{ .Values.collectors.sensors.enabled | quote }}
+            - --collectors.system.enabled
+            - {{ .Values.collectors.system.enabled | quote }}
+            - --collectors.time.enabled
+            - {{ .Values.collectors.time.enabled | quote }}
+            - --collectors.volumes.enabled
+            - {{ .Values.collectors.volumes.enabled | quote }}
+            - --history.window
+            - {{ .Values.scrape.historyWindow | quote }}
+            - --collectors.cpu.ttl
+            - {{ .Values.collectors.cpu.ttl | quote }}
+            - --collectors.cpu.mode-seconds
+            - {{ .Values.collectors.cpu.modeSeconds | quote }}
+            - --collectors.cpu.freq-interval
+            - {{ .Values.collectors.cpu.freqInterval | quote }}
+            - --collectors.nodeapi.ttl
+            - {{ .Values.collectors.nodeapi.ttl | quote }}
+            - --collectors.sensors.ttl
+            - {{ .Values.collectors.sensors.ttl | quote }}
+            - --collectors.block.ttl
+            - {{ .Values.collectors.block.ttl | quote }}
+            - --collectors.system.ttl
+            - {{ .Values.collectors.system.ttl | quote }}
+            - --collectors.processor.ttl
+            - {{ .Values.collectors.processor.ttl | quote }}
+            - --collectors.memory.ttl
+            - {{ .Values.collectors.memory.ttl | quote }}
+            - --collectors.pci.ttl
+            - {{ .Values.collectors.pci.ttl | quote }}
+          env:
+            # The Secret the Talos controller creates for the talos.dev
+            # ServiceAccount (templates/talos-serviceaccount.yaml), key
+            # `config`. The client pool watches the file's fingerprint and
+            # rebuilds the per-node clients on the 6 h cert rotation.
+            - name: TALOSCONFIG
+              value: /var/run/secrets/talos.dev/config
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.listenPort }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: talos-config
+              mountPath: /var/run/secrets/talos.dev
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        # Controller-managed: the talos.dev/v1alpha1 ServiceAccount is
+        # created by this chart; Talos fills in the Secret. The pod stays
+        # not-ready until it exists (see /ready).
+        - name: talos-config
+          secret:
+            secretName: {{ .Values.talos.serviceAccountName }}
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

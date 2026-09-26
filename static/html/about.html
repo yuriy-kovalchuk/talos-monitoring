@@ -1,0 +1,29 @@
+{{define "about-content"}}
+<div class="page-head">
+  <div class="eyebrow">System</div>
+  <h1>About</h1>
+</div>
+
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Build</span></div>
+  <table class="kv">
+    <tbody>
+      <tr><th scope="row">Version</th><td class="mono">{{.Version}}</td></tr>
+      <tr><th scope="row">Commit</th><td class="mono">{{.Commit}}</td></tr>
+      <tr><th scope="row">Built</th><td class="mono">{{.BuildDate}}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Endpoints</span></div>
+  <table class="kv">
+    <tbody>
+      <tr><th scope="row">Metrics</th><td><a class="row-link" href="/metrics">/metrics</a> · Prometheus scrape endpoint</td></tr>
+      <tr><th scope="row">Liveness</th><td><a class="row-link" href="/health">/health</a> · process liveness</td></tr>
+      <tr><th scope="row">Readiness</th><td><a class="row-link" href="/ready">/ready</a> · true once at least one node is discovered</td></tr>
+    </tbody>
+  </table>
+</div>
+{{end}}
+

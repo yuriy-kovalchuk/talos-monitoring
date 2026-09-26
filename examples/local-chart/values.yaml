@@ -1,0 +1,18 @@
+# Retarget the image at the newest pipeline build instead of the chart's
+# pinned appVersion.
+image:
+  tag: main
+  # `main` is mutable: CI updates it on every green push to main, so force the
+  # registry check on every pod start — a node with a stale cached image would
+  # otherwise keep running it. The chart default (IfNotPresent) is correct for
+  # pinned release tags.
+  pullPolicy: Always
+
+serviceMonitor:
+  # Requires the monitoring.coreos.com/v1 CRD (Prometheus Operator).
+  enabled: true
+
+grafana:
+  # Deploy the bundled dashboards (one ConfigMap per grafana/*.json) for
+  # Grafana's sidecar discovery.
+  enabled: true

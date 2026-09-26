@@ -1,0 +1,10 @@
+git
+bin/
+dist/
+*.md
+docs/
+charts/
+grafana/
+Dockerfile
+.dockerignore
+.githooks/

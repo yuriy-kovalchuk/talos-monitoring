@@ -1,0 +1,100 @@
+{{define "node_identity-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Image</div>
+  <h1>Image · {{.Node.Name}}</h1>
+</div>
+
+{{template "identity-live" .}}
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/identity), swapped with
+     outerHTML. None of this changes without a reboot, so it refreshes on the
+     slowest cadence on the dashboard — it exists so the page picks itself up
+     after an upgrade without a manual reload, not to track anything live. */}}
+{{define "identity-live"}}
+<div id="identity-live" hx-get="/partials/nodes/{{.Node.Name}}/identity"
+     hx-trigger="every 60s" hx-swap="outerHTML">
+{{if .Identity.Available}}
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Schematic</div>
+    <div class="stat-value mono">{{if .Identity.Schematic}}{{.Identity.SchematicShort}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.Schematic}}Image Factory{{else}}not a factory image{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Extensions</div>
+    <div class="stat-value">{{len .Identity.Extensions}}<span class="stat-sub">{{if .Identity.KernelVersion}}kernel {{.Identity.KernelVersion}}{{else}}installed{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Booted entry</div>
+    <div class="stat-value mono">{{if .Identity.BootedEntry}}{{.Identity.BootedEntry}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.BootedWithUKI}}unified kernel image{{else}}not a UKI{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Secure boot</div>
+    <div class="stat-value{{if .Identity.SecureBoot}} ok{{end}}">{{if .Identity.HasSecurity}}{{if .Identity.SecureBoot}}on{{else}}off{{end}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.HasSecurity}}modules {{if .Identity.ModuleSignatureEnforced}}signed{{else}}unsigned{{end}}{{else}}not reported{{end}}</span></div>
+  </div>
+</div>
+
+{{if .Identity.Extensions}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">System extensions</span>
+    <span class="card-sub mono">{{len .Identity.Extensions}} {{plural (len .Identity.Extensions) "extension" "extensions"}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Extension</th><th>Version</th></tr></thead>
+    <tbody>
+      {{range .Identity.Extensions}}
+      <tr>
+        <td class="mono">{{.Name}}</td>
+        <td class="mono">{{if .Version}}{{.Version}}{{else}}<span class="muted">not reported</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">System extensions</span></div>
+  <div class="empty">No system extensions on this node.</div>
+</div>
+{{end}}
+
+{{if .Identity.HasSecurity}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Security posture</span></div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <tbody>
+      <tr><td>Secure boot</td><td class="mono">{{if .Identity.SecureBoot}}enabled{{else}}disabled{{end}}</td></tr>
+      <tr><td>Booted with UKI</td><td class="mono">{{if .Identity.BootedWithUKI}}yes{{else}}no{{end}}</td></tr>
+      <tr><td>Module signatures</td><td class="mono">{{if .Identity.ModuleSignatureEnforced}}enforced{{else}}not enforced{{end}}</td></tr>
+      <tr><td>SELinux</td><td class="mono">{{.Identity.SELinuxState}}</td></tr>
+      <tr><td>FIPS</td><td class="mono">{{.Identity.FIPSState}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{if .Identity.Schematic}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Schematic</span>
+    <span class="card-sub">the Image Factory id this node's image was built from</span>
+  </div>
+  <div class="card-text mono">{{.Identity.Schematic}}</div>
+</div>
+{{end}}
+
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Image</span></div>
+  <div class="empty">No image data yet. The <code>identity</code> collector is disabled, or
+  it has not completed its first scrape.</div>
+</div>
+{{end}}
+</div>
+{{end}}

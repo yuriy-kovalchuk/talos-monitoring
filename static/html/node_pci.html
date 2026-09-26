@@ -1,0 +1,71 @@
+{{define "node_pci-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / PCI</div>
+  <h1>PCI · {{.Node.Name}}</h1>
+</div>
+
+{{template "pci-live" .}}
+{{end}}
+
+{{/* Link negotiation and AER counters move; the device list itself is hourly,
+     so this polls slowly. */}}
+{{define "pci-live"}}
+<div id="pci-live" hx-get="/partials/nodes/{{.Node.Name}}/pci"
+     hx-trigger="every 60s" hx-swap="outerHTML">
+{{if .PCIGroups}}
+{{range .PCIGroups}}
+{{$g := .}}
+<details class="card"{{if $g.NeedsAttention}} open{{end}}>
+  <summary class="card-head">
+    <span class="eyebrow">{{$g.Class}}</span>
+    <span class="card-sub mono">
+      {{len $g.Devices}} {{plural (len $g.Devices) "device" "devices"}}
+      {{if $g.Degraded}} · <span class="pill-warn-text">{{$g.Degraded}} link degraded</span>{{end}}
+      {{if $g.Errors}} · <span class="pill-warn-text">{{$g.Errors}} reporting errors</span>{{end}}
+    </span>
+  </summary>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead>
+      <tr><th>Bus</th><th>Device</th><th>Driver</th><th>Link</th><th>IDs</th><th>State</th></tr>
+    </thead>
+    <tbody>
+      {{range $g.Devices}}
+      <tr>
+        <td class="mono">{{.BDF}}</td>
+        <td class="cell-wrap">
+          {{fallback .Product "–"}}
+          <div class="cell-sub">{{fallback .Vendor "–"}}</div>
+        </td>
+        <td class="mono">{{fallback .Driver "–"}}{{if not .Driver}}<div class="cell-sub">unbound</div>{{end}}</td>
+        <td class="mono">
+          {{if .HasLink}}
+          {{.LinkSpeed}} {{.LinkWidth}}
+          {{if .Degraded}}<div class="cell-sub">of {{.MaxSpeed}} {{.MaxWidth}} · degraded</div>{{end}}
+          {{else}}–{{end}}
+        </td>
+        <td class="mono">
+          {{.VendorID}}:{{.ProductID}}
+          {{if .Subsystem}}<div class="cell-sub">sub {{.Subsystem}}{{if .Revision}} rev {{.Revision}}{{end}}</div>{{end}}
+        </td>
+        <td class="mono">
+          {{fallback .PowerState "–"}}
+          {{if .NUMANode}}<div class="cell-sub">NUMA {{.NUMANode}}</div>{{end}}
+          {{if and .HasAER .AERErrors}}<div class="cell-sub">{{printf "%.0f" .AERErrors}} AER errors</div>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</details>
+{{end}}
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">PCI</span></div>
+  <div class="empty">No PCI data yet · the <code>pci</code> collector is disabled, or the
+  node has not been scraped yet.</div>
+</div>
+{{end}}
+</div>
+{{end}}

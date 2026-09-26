@@ -1,0 +1,87 @@
+{{define "node_memory-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / RAM</div>
+  <h1>RAM · {{.Node.Name}}</h1>
+</div>
+
+{{template "memory-live" .}}
+
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Memory</span></div>
+  {{if .Memory}}
+  <table>
+    <thead>
+      <tr><th>Slot</th><th>Size</th><th>Speed MHz</th><th>Model</th><th>Manufacturer</th><th>Serial</th><th>Locator</th></tr>
+    </thead>
+    <tbody>
+      {{range .Memory}}
+      <tr>
+        <td class="mono">{{.Slot}}</td>
+        <td class="mono">{{.SizeDisplay}}</td>
+        <td class="mono">{{.SpeedMHz}}</td>
+        <td>{{fallback .Product "–"}}</td>
+        <td>{{fallback .Manufacturer "–"}}</td>
+        <td class="mono">{{fallback .SerialNumber "–"}}</td>
+        <td class="mono">{{fallback .DeviceLocator "–"}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <div class="card-foot mono">{{.MemoryTotal}} installed across {{len .Memory}} {{plural (len .Memory) "module" "modules"}}</div>
+  {{else}}
+  <div class="empty">No memory data yet · the <code>memory</code> collector is disabled, or
+  the node has not been scraped yet.</div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* Usage moves every scrape; the DIMM inventory below does not. */}}
+{{define "memory-live"}}
+<div id="memory-live" hx-get="/partials/nodes/{{.Node.Name}}/memory"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+{{if .MemUsage.Available}}
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Used</div>
+    <div class="stat-value">{{.MemUsage.UsedPctLabel}}%<span class="stat-sub">{{.MemUsage.Used}} of {{.MemUsage.Total}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Available</div>
+    <div class="stat-value mono">{{.MemUsage.Avail}}<span class="stat-sub">for new workloads</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Cache + buffers</div>
+    <div class="stat-value mono">{{.MemUsage.BuffCache}}<span class="stat-sub">reclaimable</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Swap</div>
+    {{if .MemUsage.HasSwap}}
+    <div class="stat-value mono">{{.MemUsage.SwapUsed}}<span class="stat-sub">of {{.MemUsage.SwapTotal}}</span></div>
+    {{else}}
+    <div class="stat-value mono">none<span class="stat-sub">not configured</span></div>
+    {{end}}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Memory breakdown</span>
+    <span class="card-sub mono">{{.MemUsage.Total}} total</span>
+  </div>
+  <div class="mem-bar">
+    <span class="mem-seg mem-used" style="width:{{.MemUsage.UsedPct}}%"></span>
+    <span class="mem-seg mem-cache" style="width:{{.MemUsage.BuffCachePct}}%"></span>
+    <span class="mem-seg mem-free" style="width:{{.MemUsage.FreePct}}%"></span>
+  </div>
+  <div class="mem-key mono">
+    <span><span class="mem-dot mem-used"></span>used {{.MemUsage.Used}}</span>
+    <span><span class="mem-dot mem-cache"></span>cache + buffers {{.MemUsage.BuffCache}}</span>
+    <span><span class="mem-dot mem-free"></span>free {{.MemUsage.Free}}</span>
+  </div>
+  {{if .MemUsage.Committed}}
+  <div class="card-foot mono">committed {{.MemUsage.Committed}} of {{.MemUsage.CommitLimit}} limit{{if .MemUsage.CommitOvercommit}} · overcommitted{{end}}</div>
+  {{end}}
+</div>
+{{end}}
+</div>
+{{end}}

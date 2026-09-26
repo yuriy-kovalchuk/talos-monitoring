@@ -1,0 +1,9 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  enable:
+    # defaults (errcheck, govet, staticcheck, ineffassign, unused) stay on;
+    # staticcheck SA1019 flags deprecated API usage
+    - gosec
+    - misspell

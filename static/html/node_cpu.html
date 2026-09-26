@@ -1,0 +1,140 @@
+{{define "node_cpu-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / CPU</div>
+  <h1>CPU · {{.Node.Name}}</h1>
+</div>
+
+<div class="card">
+  <div class="card-head"><span class="eyebrow">CPU</span></div>
+  {{if .CPU}}
+  <table>
+    <thead>
+      <tr><th>Socket</th><th>Model</th><th>Cores</th><th>Threads</th><th>Max MHz</th><th>Part #</th><th>Serial</th></tr>
+    </thead>
+    <tbody>
+      {{range .CPU}}
+      <tr>
+        <td class="mono">{{.Socket}}</td>
+        <td>{{fallback .Product "–"}}</td>
+        <td class="mono">{{.Cores}}</td>
+        <td class="mono">{{.Threads}}</td>
+        <td class="mono">{{.MaxMHz}}</td>
+        <td class="mono">{{fallback .PartNumber "–"}}</td>
+        <td class="mono">{{fallback .SerialNumber "–"}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">No CPU data yet · the <code>hwinfo</code> collector is disabled, or
+  the node has not been scraped yet.</div>
+  {{end}}
+</div>
+
+{{template "cpu-live" .}}
+
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/cpu). The whole block swaps
+     now that there are no chart elements to preserve — the charts used to sit
+     outside this region because replacing their container destroyed them. */}}
+{{define "cpu-live"}}
+<div id="cpu-live" hx-get="/partials/nodes/{{.Node.Name}}/cpu"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">CPU usage</div>
+    <div class="stat-value">{{if and .Status .Status.HasCPU}}{{printf "%.1f" .Status.CPUPercent}}%{{else}}–{{end}}<span class="stat-sub">{{.Summary.Cores}} cores / {{.Summary.Threads}} threads</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Load average</div>
+    <div class="stat-value mono">{{if and .Status .Status.HasLoad}}{{.Status.Load}}{{else}}–{{end}}<span class="stat-sub">{{if and .Status .Status.HasLoad}}1m / 5m / 15m{{else}}not reported{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Processes</div>
+    <div class="stat-value mono">{{if .Status}}{{.Status.Running}}{{else}}–{{end}}<span class="stat-sub">{{if .Status}}running · {{.Status.Blocked}} blocked{{else}}not reported{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Frequency</div>
+    <div class="stat-value mono">{{if .FreqObserved.Available}}{{.FreqObserved.Median}}<span class="stat-sub">MHz median · {{.FreqObserved.Min}}–{{.FreqObserved.Max}} observed</span>{{else}}–<span class="stat-sub">no samples yet</span>{{end}}</div>
+  </div>
+</div>
+
+{{if and .Status .Status.Modes}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Where the time goes</span>
+    <span class="card-sub mono">share of CPU time since the last scrape</span>
+  </div>
+  <div class="mode-bar">
+    {{range .Status.Modes}}<span class="mode-seg mode-{{.Tone}}" style="width:{{.Width}}%" title="{{.Mode}} {{.Pct}}%"></span>{{end}}
+  </div>
+  <div class="mode-legend">
+    {{range .Status.Modes}}
+    <span class="mode-key"><span class="mode-dot mode-{{.Tone}}"></span>{{.Mode}} <span class="mono">{{.Pct}}%</span></span>
+    {{end}}
+  </div>
+  <div class="card-foot">Anything under <code>iowait</code>, <code>steal</code> or
+  <code>softirq</code> is time the node spent waiting on something other than its own
+  work — storage, a noisy neighbour, or interrupt pressure.</div>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Per core</span>
+    <span class="card-sub mono">{{if and .Status .Status.Cores}}{{len .Status.Cores}} threads reporting{{else}}no per-core data{{end}}</span>
+  </div>
+  {{if and .Status .Status.Cores}}
+  <div class="core-grid">
+    {{range .Status.Cores}}
+    <div class="core" title="core {{.Index}}{{if .HasUsage}} · {{printf "%.0f" .Usage}}% busy{{end}}{{if .FreqMHz}} · {{.FreqMHz}} MHz{{end}}">
+      <span class="core-bar"><span style="height:{{if .HasUsage}}{{printf "%.0f" .Usage}}{{else}}0{{end}}%"></span></span>
+      <span class="core-n mono">{{.Index}}</span>
+      {{if .HasUsage}}<span class="core-pct mono">{{printf "%.0f" .Usage}}</span>{{end}}
+      {{if .FreqMHz}}<span class="core-f mono">{{.FreqMHz}}</span>{{end}}
+    </div>
+    {{end}}
+  </div>
+  <div class="card-foot mono">bar = busy % · below it: busy % and current MHz</div>
+  {{else}}
+  <div class="empty">No per-core usage yet — the <code>cpu</code> collector is disabled, or
+  the node has not been scraped twice yet (usage needs two samples).</div>
+  {{end}}
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Frequency</span>
+    <span class="card-sub mono">{{if .FreqObserved.Available}}observed over the last {{.FreqObserved.Window}}{{else}}policy only — no samples yet{{end}}</span>
+  </div>
+  {{if or .FreqObserved.Available .Status}}
+  <table class="kv">
+    <tbody>
+      {{if .FreqObserved.Available}}
+      <tr><th scope="row">Observed range</th><td class="mono">{{.FreqObserved.Min}} – {{.FreqObserved.Max}} MHz</td></tr>
+      <tr><th scope="row">Median</th><td class="mono">{{.FreqObserved.Median}} MHz<div class="cell-sub">{{.FreqObserved.Samples}} samples over {{.FreqObserved.Window}}</div></td></tr>
+      {{end}}
+      {{if .Status}}
+      {{/* Rendered whenever the node reports at all, NOT only when there is
+           frequency history: the policy is current state, and hiding it until
+           a window fills would blank it on every fresh start. */}}
+      <tr><th scope="row">Policy</th><td class="mono">
+        {{if .Status.Policy.Mixed}}cpufreq policy varies across cores{{else}}governor {{fallback .Status.Policy.Governor "n/a"}}{{if and .Status.Policy.MinMHz .Status.Policy.MaxMHz}} · {{.Status.Policy.MinMHz}} – {{.Status.Policy.MaxMHz}} MHz{{end}}{{end}}
+        {{if .Status.Cores}}<div class="cell-sub">{{len .Status.Cores}} cores reporting</div>{{end}}
+      </td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{if .FreqObserved.Available}}
+  <div class="card-foot">Scraping is itself load and cpufreq governors react in
+  microseconds, so a single reading runs high — the range over the window is the honest
+  figure. See <code>talos_cpu_core_freq_hertz</code> for the raw per-core values.</div>
+  {{end}}
+  {{else}}
+  <div class="empty">No frequency data yet. The <code>cpu</code> collector is disabled, or
+  it reads cpufreq through the file API and lacks the <code>os:admin</code> role.</div>
+  {{end}}
+</div>
+{{end}}

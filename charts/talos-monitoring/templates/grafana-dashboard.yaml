@@ -1,0 +1,30 @@
+{{- if .Values.grafana.enabled }}
+# One ConfigMap per bundled dashboard (grafana/*.json), each labelled for
+# Grafana's sidecar discovery. To ship another dashboard, drop its JSON in
+# grafana/ — it is picked up automatically.
+{{- $names := list }}
+{{- range $path, $f := .Files.Glob "grafana/*.json" }}
+{{- $names = append $names $path }}
+{{- end }}
+{{- range $name := sortAlpha $names }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "talos-monitoring.fullname" $ }}-dashboard-{{ . | base | trimSuffix ".json" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "talos-monitoring.selectorLabels" $ | nindent 4 }}
+    {{ $.Values.grafana.sidecarLabel.key }}: {{ $.Values.grafana.sidecarLabel.value | quote }}
+    {{- with $.Values.grafana.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $.Values.grafana.sidecarTargetDirectory }}
+  annotations:
+    k8s-sidecar-target-directory: {{ . | quote }}
+  {{- end }}
+data:
+  {{ . | base }}: |
+    {{- $.Files.Get . | nindent 4 }}
+{{- end }}
+{{- end }}

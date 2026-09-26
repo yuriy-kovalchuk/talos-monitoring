@@ -1,0 +1,96 @@
+{{define "node_gpu-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / GPU</div>
+  <h1>GPU · {{.Node.Name}}</h1>
+</div>
+
+{{template "gpu-live" .}}
+{{end}}
+
+{{/* Polled on its own (GET /partials/nodes/<name>/gpu), swapped with
+     outerHTML. Utilisation and VRAM move as fast as CPU usage, so this shares
+     the 15s node-section cadence. */}}
+{{define "gpu-live"}}
+<div id="gpu-live" hx-get="/partials/nodes/{{.Node.Name}}/gpu"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+{{if .GPUs}}
+
+{{range .GPUs}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>{{.Card}}</span>
+    <span class="card-sub mono">{{.Driver}} · {{.PCI}}{{if .PCIID}} · {{.PCIID}}{{end}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <tbody>
+      <tr>
+        <td>Utilisation</td>
+        <td class="mono">
+          {{if .HasBusy}}
+          <span class="cell-bar"><span style="width:{{.BusyPct}}%"></span></span>
+          {{.BusyPct}}%{{if .Suspended}}<div class="cell-sub">asleep</div>{{end}}
+          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{.Driver}}</span>{{end}}
+        </td>
+      </tr>
+      <tr>
+        <td>Video memory</td>
+        <td class="mono">
+          {{if .HasVRAM}}
+          <span class="cell-bar"><span style="width:{{.VRAMPct}}%"></span></span>
+          {{.VRAMUsed}} of {{.VRAMTotal}} ({{.VRAMPct}}%)
+          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{.Driver}}</span>{{end}}
+        </td>
+      </tr>
+      <tr>
+        <td>GTT<div class="cell-sub">system memory the GPU can address</div></td>
+        <td class="mono">{{if .HasGTT}}{{.GTTUsed}} of {{.GTTTotal}}{{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported</span>{{end}}</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{if .GPUSensors}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Thermals &amp; power</span>
+    <span class="card-sub mono">{{len .GPUSensors}} {{plural (len .GPUSensors) "reading" "readings"}} from GPU hwmon chips</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead><tr><th>Reading</th><th>Value</th><th>Of limit</th><th>Chip</th></tr></thead>
+    <tbody>
+      {{range .GPUSensors}}
+      <tr>
+        <td>{{fallback .Label .Sensor}}{{if .Alarm}}<div class="cell-sub pill-warn-text">alarm raised</div>{{end}}</td>
+        <td class="mono">{{.Value}}</td>
+        <td class="mono">{{if .HasLimit}}<span class="cell-bar"><span style="width:{{.Pct}}%"></span></span>{{.Pct}}% <div class="cell-sub">{{.Limit}} {{.LimitOf}}</div>{{else}}<span class="muted">not reported</span>{{end}}</td>
+        <td class="mono">{{.ChipName}}<div class="cell-sub">{{.Chip}}</div></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <div class="card-foot">Readings are shown against their hwmon chip rather than a card.
+  The link itself is exported — <code>talos_sensor_chip_info</code> carries the PCI address
+  that owns each chip — so a Grafana panel can name the card; this page does not yet. The
+  same readings appear on the
+  <a class="crumb" href="/nodes/{{.Node.Name}}/sensors">sensors page</a> alongside every other chip.</div>
+</div>
+{{end}}
+
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">GPU</span></div>
+  <div class="empty">No GPU with a driver bound on this node. A card with no kernel
+  driver (no matching system extension in the image) has no
+  <code>/sys/class/drm</code> entry and cannot report utilisation — check the
+  <a class="crumb" href="/nodes/{{.Node.Name}}/pci">PCI page</a> for whether the hardware
+  is present at all. The <code>gpu</code> collector also needs the <code>os:admin</code>
+  role for file reads.</div>
+</div>
+{{end}}
+</div>
+{{end}}

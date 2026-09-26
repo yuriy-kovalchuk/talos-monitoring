@@ -1,0 +1,151 @@
+{{define "node_links-content"}}
+<div class="page-head">
+  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Network</div>
+  <h1>Network · {{.Node.Name}}</h1>
+</div>
+
+{{template "links-live" .}}
+{{end}}
+
+{{/* Interface state, throughput and error counters all move, so the whole body
+     refreshes; the chart element inside carries hx-preserve. */}}
+{{define "links-live"}}
+<div id="links-live" hx-get="/partials/nodes/{{.Node.Name}}/links"
+     hx-trigger="every 15s" hx-swap="outerHTML">
+{{if .Links}}
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Interfaces</div>
+    <div class="stat-value">{{.NetSummary.Up}}<span class="stat-sub">up of {{.NetSummary.Total}}{{if .NetSummary.Physical}} · {{.NetSummary.Physical}} physical{{end}}</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Receiving</div>
+    <div class="stat-value mono">{{fallback .NetSummary.RxRate "–"}}<span class="stat-sub">across all interfaces</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Sending</div>
+    <div class="stat-value mono">{{fallback .NetSummary.TxRate "–"}}<span class="stat-sub">across all interfaces</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Errors &amp; drops</div>
+    <div class="stat-value{{if not .NetSummary.Problems}} ok{{end}}">{{.NetSummary.Problems}}<span class="stat-sub">{{if .NetSummary.Problems}}interfaces affected{{else}}none since boot{{end}}</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Interfaces</span>
+    <span class="card-sub mono">{{len .Links}} {{plural (len .Links) "interface" "interfaces"}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead>
+      <tr><th>Name</th><th>State</th><th>Speed</th><th>MTU</th><th>Throughput</th><th>Address</th><th>Issues</th></tr>
+    </thead>
+    <tbody>
+      {{range .Links}}
+      <tr{{if not .Up}} class="row-idle"{{end}}>
+        <td>
+          {{.Name}}
+          <div class="cell-sub">{{if .Physical}}{{fallback .Product "physical"}}{{else}}{{.Kind}}{{end}}</div>
+        </td>
+        <td><span class="status-cell"><span class="dot {{if .Up}}dot-ok{{else}}dot-down{{end}}"></span>{{if .Up}}up{{else}}down{{end}}</span></td>
+        <td class="mono">{{if .Speed}}{{.Speed}}<div class="cell-sub">{{.Duplex}}</div>{{else}}–{{end}}</td>
+        <td class="mono">{{fallback .MTU "–"}}<div class="cell-sub">{{fallback .HWAddr ""}}</div></td>
+        <td class="mono">
+          {{if and .HasRates .Up}}
+          <span class="rate-in">&darr; {{.RxRate}}</span>
+          <div class="cell-sub rate-out">&uarr; {{.TxRate}}</div>
+          {{else}}–{{end}}
+        </td>
+        <td class="mono">
+          {{if .Addresses}}{{range .Addresses}}<div>{{.Address}}</div>{{end}}{{else}}–{{end}}
+        </td>
+        <td class="mono">{{if .Issues}}<span class="pill-warn-text">{{.Issues}}</span><div class="cell-sub">since boot</div>{{else}}–{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow"><span class="live-dot"></span>Counters</span>
+    <span class="card-sub mono">cumulative since boot</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <thead>
+      <tr><th>Interface</th><th>Received</th><th>Sent</th><th>Rx errors</th><th>Tx errors</th><th>Rx dropped</th><th>Tx dropped</th></tr>
+    </thead>
+    <tbody>
+      {{range .Links}}
+      {{if .HasTotals}}
+      <tr{{if not .Up}} class="row-idle"{{end}}>
+        <td class="mono">{{.Name}}</td>
+        <td class="mono">{{.RxTotal}}{{if and .HasRates .Up}}<div class="cell-sub rate-in">&darr; {{.RxRate}}</div>{{end}}</td>
+        <td class="mono">{{.TxTotal}}{{if and .HasRates .Up}}<div class="cell-sub rate-out">&uarr; {{.TxRate}}</div>{{end}}</td>
+        <td class="mono{{if .RxErrors}} pill-warn-text{{end}}">{{printf "%.0f" .RxErrors}}</td>
+        <td class="mono{{if .TxErrors}} pill-warn-text{{end}}">{{printf "%.0f" .TxErrors}}</td>
+        <td class="mono{{if .RxDropped}} pill-warn-text{{end}}">{{printf "%.0f" .RxDropped}}</td>
+        <td class="mono{{if .TxDropped}} pill-warn-text{{end}}">{{printf "%.0f" .TxDropped}}</td>
+      </tr>
+      {{end}}
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <div class="card-foot">Totals come from <code>/proc/net/dev</code> and reset on reboot.
+  For a rate over your own window use
+  <code>rate(talos_net_link_rx_bytes_total[5m])</code>.</div>
+</div>
+
+{{range .Links}}
+<details class="card">
+  <summary class="card-head">
+    <span class="eyebrow">{{.Name}} · detail</span>
+    <span class="card-sub mono">{{if .Physical}}{{fallback .Driver "no driver"}}{{else}}{{.Kind}}{{end}}</span>
+  </summary>
+  <table class="kv">
+    <tbody>
+      {{if .Physical}}
+      <tr><th scope="row">Adapter</th><td>{{fallback .Product "–"}}{{if .Vendor}} <span class="muted">{{.Vendor}}</span>{{end}}</td></tr>
+      {{end}}
+      <tr><th scope="row">Link</th><td class="mono">
+        {{if .Speed}}{{.Speed}}{{else}}<span class="muted">no carrier</span>{{end}}
+        {{if .Duplex}} · {{.Duplex}}{{end}}{{if .Port}} · {{.Port}}{{end}} · MTU {{fallback .MTU "–"}}</td></tr>
+      <tr><th scope="row">MAC</th><td class="mono">{{fallback .HWAddr "–"}}</td></tr>
+      {{if .Addresses}}
+      <tr><th scope="row">Addresses</th><td class="mono">
+        {{range .Addresses}}<div>{{.Address}} <span class="muted">{{.Family}} · {{.Scope}}</span></div>{{end}}
+      </td></tr>
+      {{end}}
+      {{if .HasProblem}}
+      <tr><th scope="row">Counters</th><td class="mono">
+        {{if .RxDropped}}<div>{{printf "%.0f" .RxDropped}} received dropped</div>{{end}}
+        {{if .TxDropped}}<div>{{printf "%.0f" .TxDropped}} transmitted dropped</div>{{end}}
+        {{if .RxErrors}}<div>{{printf "%.0f" .RxErrors}} receive errors</div>{{end}}
+        {{if .TxErrors}}<div>{{printf "%.0f" .TxErrors}} transmit errors</div>{{end}}
+        <div class="cell-sub">cumulative since boot</div>
+      </td></tr>
+      {{end}}
+      {{if .Driver}}
+      <tr><th scope="row">Driver</th><td class="mono">{{.Driver}}{{if .Versions}} <span class="muted">{{.Versions}}</span>{{end}}</td></tr>
+      {{end}}
+      {{if .BusPath}}
+      <tr><th scope="row">Bus</th><td class="mono">{{.BusPath}}{{if .PCIID}} <span class="muted">{{.PCIID}}</span>{{end}}</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</details>
+{{end}}
+{{else}}
+<div class="card">
+  <div class="card-head"><span class="eyebrow">Network</span></div>
+  <div class="empty">No interface data yet · the <code>network</code> collector is disabled, or
+  the node has not been scraped yet.</div>
+</div>
+{{end}}
+</div>
+{{end}}

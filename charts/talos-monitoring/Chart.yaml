@@ -1,0 +1,23 @@
+apiVersion: v2
+name: talos-monitoring
+description: >-
+  Agentless Prometheus exporter and htmx dashboard for Talos node hardware.
+  Talks to the per-node Talos API in-cluster (built-in service accounts) —
+  no DaemonSet, no privileged pod, nothing runs on the node.
+type: application
+version: 0.1.0
+# appVersion keeps the tag's v prefix: it doubles as the image tag
+# (templates/_helpers.tpl), and release images are pushed as :vX.Y.Z.
+appVersion: "v0.1.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - talos
+  - prometheus
+  - monitoring
+  - hardware
+  - exporter
+home: https://github.com/yuriy-kovalchuk/talos-monitoring
+sources:
+  - https://github.com/yuriy-kovalchuk/talos-monitoring
+maintainers:
+  - name: yuriy

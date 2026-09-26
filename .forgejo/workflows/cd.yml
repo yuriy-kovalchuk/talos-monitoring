@@ -1,0 +1,105 @@
+name: CD
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Artifact registry: one registry serves both the docker image and the helm
+  # chart (pushed as an OCI artifact), so one login covers both. REGISTRY/
+  # IMAGE/CHART come from Forgejo repo variables (Settings → Actions →
+  # Variables) so this file carries no reference to any specific registry.
+  # REGISTRY_USERNAME/REGISTRY_PASSWORD are repo secrets holding an account
+  # (e.g. a robot account) authorized to push here.
+  REGISTRY: ${{ vars.REGISTRY }}
+  IMAGE: ${{ vars.IMAGE }}
+  CHART: ${{ vars.CHART }}
+
+jobs:
+  publish:
+    name: Publish image + helm chart
+    runs-on: [docker]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # tags are needed for version stamping
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Compute version and tags
+        id: version
+        run: |
+          {
+            echo "VERSION=${GITHUB_REF_NAME}"
+            echo "COMMIT=$(git rev-parse --short HEAD)"
+            echo "BUILDDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo 'TAGS<<EOF'
+            echo "${REGISTRY}/${IMAGE}:latest"
+            echo "${REGISTRY}/${IMAGE}:${GITHUB_REF_NAME}"
+            echo "${REGISTRY}/${IMAGE}:${GITHUB_SHA}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image (linux/amd64)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+            COMMIT=${{ steps.version.outputs.COMMIT }}
+            BUILDDATE=${{ steps.version.outputs.BUILDDATE }}
+          tags: ${{ steps.version.outputs.TAGS }}
+
+      # The chart is a release artifact: chart versions must be unique semver (there is
+      # no "latest"), so the chart publishes only on tag pushes, and the tag is
+      # the version. The stamp rewrites a working copy of Chart.yaml (version +
+      # appVersion); the templates pin the image tag to appVersion
+      # (templates/_helpers.tpl), so appVersion keeps the tag's v prefix and
+      # references the :${GITHUB_REF_NAME} image the same run pushed.
+      - name: Install helm
+        run: |
+          curl -fsSL "https://get.helm.sh/helm-v3.18.6-linux-amd64.tar.gz" | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/helm
+          helm version --short
+
+      - name: Stamp chart version from tag
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag $GITHUB_REF_NAME is not semver (expected e.g. v0.2.0)"
+            exit 1
+          fi
+          sed -i "s/^version:.*/version: ${ver}/" charts/talos-monitoring/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${GITHUB_REF_NAME}\"/" charts/talos-monitoring/Chart.yaml
+          grep -E '^(version|appVersion):' charts/talos-monitoring/Chart.yaml
+
+      - name: Helm lint (stamped chart)
+        run: make helm-lint
+
+      - name: Package helm chart
+        run: |
+          helm package charts/talos-monitoring -d dist
+          ls -la dist/
+
+      - name: Publish helm chart (OCI artifact)
+        # helm push authenticates through the docker config the login step
+        # wrote, so no separate credentials are needed here.
+        run: |
+          version=$(awk '/^version:/{print $2}' charts/talos-monitoring/Chart.yaml)
+          helm push "dist/talos-monitoring-${version}.tgz" "oci://${REGISTRY}/${CHART}"
+          echo "Pushed talos-monitoring-${version}.tgz"
