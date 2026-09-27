@@ -138,15 +138,24 @@ Outside Kubernetes the monitor picks up the usual config paths automatically
 (`$KUBECONFIG`/`~/.kube/config`, `$TALOSCONFIG`/`~/.talos/config`). Run
 `./bin/talos-monitoring serve --help` for the full flag list.
 
-## Metrics & dashboard
+## Metrics
 
 Every metric is documented in [`docs/METRICS.md`](docs/METRICS.md), generated
-from a live exposition and kept in sync with the code by a test. Open
-`http://<host>:8080/` for the dashboard — a cluster overview, a per-node page,
-and per-category pages (health, CPU, memory, storage, sensors, …). There are
-no charts in the UI by design: it reports current state, and range queries
-belong in Grafana against `/metrics` — dashboards for that ship in the Helm
-chart.
+from a live exposition and kept in sync with the code by a test.
+
+## Dashboards
+
+Open `http://<host>:8080/` for the built-in dashboard: a cluster overview, a
+per-node page, and per-category pages (health, CPU, memory, storage,
+sensors, and more). It has no charts by design, it reports current state
+plus a short in-memory history, so it stays useful even without Prometheus
+running. Screenshots of every page are in
+[`docs/built-in-dashboard.md`](docs/built-in-dashboard.md).
+
+For persistent, long-term metrics, trends, and alerting, use the Grafana
+dashboards that ship with the Helm chart, scraping `/metrics`. Screenshots
+of every dashboard are in
+[`docs/grafana-dashboards.md`](docs/grafana-dashboards.md).
 
 ## Security
 
