@@ -107,7 +107,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_net_link_info",
 		Help: "Network interface identity (value 1), one series per interface.",
-	}, []string{"node", "link", "type", "kind", "hwaddr", "driver", "driver_version",
+	}, []string{"node", "link", "type", "kind", "master", "hwaddr", "driver", "driver_version",
 		"firmware_version", "bus_path", "pci_id", "vendor", "product", "port", "duplex"})
 	up := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_net_link_up",
@@ -132,6 +132,18 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	kept := map[string]bool{}
 	var snapLinks []snapshot.Link
 	byName := map[string]int{}
+
+	// LinkStatus points at a bond or bridge by interface index, and an index is
+	// only useful once every link's name is known. Resolving it up front lets the
+	// loop below label a slave with its master: without that, nothing here (or in
+	// PromQL) can separate a bond's traffic from its slaves'.
+	nameByIndex := map[uint32]string{}
+	for _, r := range links.Items {
+		if l, ok := r.(*talosnet.LinkStatus); ok {
+			nameByIndex[l.TypedSpec().Index] = l.Metadata().ID()
+		}
+	}
+
 	for _, r := range links.Items {
 		l, ok := r.(*talosnet.LinkStatus)
 		if !ok {
@@ -149,7 +161,14 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		id := l.Metadata().ID()
 		kept[id] = true
 
-		info.WithLabelValues(name, id, spec.Type.String(), kind, spec.HardwareAddr.String(),
+		// The master may be a link this collector drops (a VRF, say); the slave is
+		// still its slave, so resolve against every link, not just the kept ones.
+		master := ""
+		if mi := spec.MasterIndex; mi != 0 {
+			master = nameByIndex[mi]
+		}
+
+		info.WithLabelValues(name, id, spec.Type.String(), kind, master, spec.HardwareAddr.String(),
 			spec.Driver, spec.DriverVersion, spec.FirmwareVersion, spec.BusPath, spec.PCIID,
 			spec.Vendor, spec.Product, spec.Port.String(), spec.Duplex.String()).Set(1)
 
@@ -160,6 +179,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 			Name:            id,
 			Type:            spec.Type.String(),
 			Kind:            kind,
+			Master:          master,
 			HWAddr:          spec.HardwareAddr.String(),
 			Driver:          spec.Driver,
 			DriverVersion:   spec.DriverVersion,
