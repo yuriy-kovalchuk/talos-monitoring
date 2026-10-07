@@ -184,6 +184,14 @@ func New(log *slog.Logger, opts Options) (*App, error) {
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
+		// Idle keep-alive connections need a deadline of their own. Without
+		// IdleTimeout the server holds one open for the life of the process, so an
+		// abandoned dashboard tab costs a goroutine and an fd forever on a pod that
+		// is never restarted. It must stay above the scrape interval (30 s by
+		// default, and the ServiceMonitor's interval too), otherwise the server
+		// closes Prometheus's pooled connection between scrapes and every scrape
+		// pays a fresh TCP handshake.
+		IdleTimeout: 60 * time.Second,
 	}
 	return a, nil
 }
