@@ -159,3 +159,25 @@ func TestCollapsePolicyMixedReportsNoSinglePolicy(t *testing.T) {
 		t.Errorf("Mixed must leave the fields empty, got %+v", p)
 	}
 }
+
+// TestFreqMHzConvertsHertz pins the divisor. The comment above freqMHz used to
+// name kilohertz, which is the unit cpufreq reports before the collector
+// multiplies by 1e3, so the obvious "fix" for a reader was to change /1e6 into
+// /1e3. Nothing in the suite referenced freqMHz, so that edit would have taken
+// every core frequency on the CPU page 1000x high (2400 -> 2400000 MHz) without
+// failing a single test.
+func TestFreqMHzConvertsHertz(t *testing.T) {
+	for _, tc := range []struct {
+		hz   float64
+		want string
+	}{
+		{hz: 2_400_000_000, want: "2400"}, // whole: no decimals
+		{hz: 2_361_000_000, want: "2361"},
+		{hz: 800_000_000, want: "800"},
+		{hz: 2_400_500_000, want: "2400.5"}, // fractional: one decimal
+	} {
+		if got := freqMHz(tc.hz); got != tc.want {
+			t.Errorf("freqMHz(%v) = %q, want %q", tc.hz, got, tc.want)
+		}
+	}
+}
