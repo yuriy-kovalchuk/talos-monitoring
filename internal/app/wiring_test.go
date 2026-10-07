@@ -1,10 +1,17 @@
 package app
 
 import (
+	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collector"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/block"
@@ -180,5 +187,54 @@ func TestNodeStatusReportsUnknownNodesAsDown(t *testing.T) {
 	status := nodeStatus(a.talosPool, a.scraper)
 	if _, up := status("never-seen"); up {
 		t.Error("a node the scraper has never reached reported as up")
+	}
+}
+
+// TestReadyRequiresTalosConfig pins finding 1.1. /ready was wired to
+// nodes.Manager.Ready — "discovery has seen at least one node" — which is true
+// whether or not the exporter can talk to the nodes. With the machineconfig
+// prerequisite missing, the pod reported Ready while every collector failed on a
+// missing talosconfig, contradicting the chart's readiness probe and the README's
+// "it stays 0/1 and logs talosconfig unavailable". Readiness must be the
+// conjunction of discovery and the Talos client pool.
+func TestReadyRequiresTalosConfig(t *testing.T) {
+	a, err := New(discardLog(), Options{CollectorEnabled: map[string]bool{"cpu": true}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	a.nodes.SetClientset(fake.NewSimpleClientset(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+		Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
+			{Type: corev1.NodeInternalIP, Address: "192.0.2.10"},
+			{Type: corev1.NodeHostName, Address: "worker-1"},
+		}},
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go a.nodes.Run(ctx)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !a.nodes.Ready() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !a.nodes.Ready() {
+		t.Fatal("discovery never synced from the fake clientset")
+	}
+	if a.talosPool.Ready() {
+		t.Fatal("test setup: the Talos client pool unexpectedly loaded a config")
+	}
+
+	rec := httptest.NewRecorder()
+	a.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("GET /ready = %d with discovery synced and no talosconfig, want 503", rec.Code)
+	}
+
+	// Liveness stays green: the process is fine, it just cannot do its job.
+	rec = httptest.NewRecorder()
+	a.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /health = %d, want 200", rec.Code)
 	}
 }

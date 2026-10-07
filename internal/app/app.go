@@ -180,12 +180,25 @@ func New(log *slog.Logger, opts Options) (*App, error) {
 		pvs:        pvm,
 	}
 	a.srv = &http.Server{
-		Handler:           web.NewRouter(log, gatherer, nm.Ready, nm.Nodes, nodeStatus(tp, scraper), hist, snap, pvm.Volumes),
+		Handler:           web.NewRouter(log, gatherer, a.ready, nm.Nodes, nodeStatus(tp, scraper), hist, snap, pvm.Volumes),
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
 	}
 	return a, nil
+}
+
+// ready is /ready: both halves of startup must have completed.
+//
+// Discovery alone is not readiness. The Kubernetes API answers whether the
+// cluster *has* nodes; the Talos client pool answers whether the exporter can
+// actually reach them (the talos.dev ServiceAccount Secret has been mounted and
+// parsed). Wiring this to discovery alone let the pod report Ready while every
+// collector was failing on a missing talosconfig — which is exactly the state
+// the chart's readiness probe exists to surface, and what the README tells
+// operators to expect ("it stays 0/1 and logs talosconfig unavailable").
+func (a *App) ready() bool {
+	return a.nodes.Ready() && a.talosPool.Ready()
 }
 
 // logCadences logs the effective per-collector scrape cadence (sorted by
