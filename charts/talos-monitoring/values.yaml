@@ -224,9 +224,11 @@ resources:
     memory: 512Mi
 
 # --- Probes ---------------------------------------------------------------------------
-# /health = process alive (liveness). /ready = talosconfig loaded and per-node
-# clients built (readiness): until the in-cluster prerequisite is in place the
-# pod stays 0/1 Ready instead of looking healthy while scraping nothing.
+# /health = process alive (liveness). /ready = node discovery synced AND the
+# talosconfig loaded (readiness): until the in-cluster prerequisite is in place
+# the pod stays 0/1 Ready instead of looking healthy while scraping nothing. The
+# talos-config Secret volume is `optional`, so the container starts without it
+# and says so itself rather than failing to mount.
 
 livenessProbe:
   httpGet:

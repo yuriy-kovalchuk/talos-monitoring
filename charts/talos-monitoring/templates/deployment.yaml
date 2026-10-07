@@ -134,9 +134,17 @@ spec:
         # Controller-managed: the talos.dev/v1alpha1 ServiceAccount is
         # created by this chart; Talos fills in the Secret. The pod stays
         # not-ready until it exists (see /ready).
+        #
+        # optional: true is what makes that statement true. Without it, a
+        # cluster whose machineconfig lacks machine.features.
+        # kubernetesTalosAPIAccess never produces the Secret, kubelet never
+        # starts the container (FailedMount, pod stuck in ContainerCreating),
+        # and the operator sees a Kubernetes mount error instead of the
+        # exporter's own "talosconfig unavailable, retrying" and a 0/1 pod.
         - name: talos-config
           secret:
             secretName: {{ .Values.talos.serviceAccountName }}
+            optional: true
         - name: tmp
           emptyDir: {}
         {{- with .Values.extraVolumes }}
