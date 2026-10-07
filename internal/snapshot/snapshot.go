@@ -122,9 +122,13 @@ type Address struct {
 
 // Link is one network interface, its counters and its addresses.
 type Link struct {
-	Name            string
-	Type            string
-	Kind            string // "" for a physical NIC
+	Name string
+	Type string
+	Kind string // "" for a physical NIC
+	// Master names the bond or bridge this interface is a slave of; "" means the
+	// interface is topmost. A slave's traffic is counted on its master too, so an
+	// aggregate over every interface double-counts a bonded node.
+	Master          string
 	HWAddr          string
 	Driver          string
 	DriverVersion   string

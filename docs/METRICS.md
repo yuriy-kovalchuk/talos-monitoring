@@ -449,7 +449,7 @@ cluster only published temperature and fan limits, so the `frequency`, `power` a
 |---|---|---|
 | `talos_net_address_info` | `address`, `family`, `link`, `scope` | `address=192.0.2.3/24, family=inet4, link=eno1, scope=global` → **1** |
 | `talos_net_link_carrier` | `link` | `link=eno1` → **1** |
-| `talos_net_link_info` | `bus_path`, `driver`, `driver_version`, `duplex`, `firmware_version`, `hwaddr`, `kind`, `link`, `pci_id`, `port`, `product`, `type`, `vendor` | `bus_path=0000:00:1f.6, driver=e1000e, driver_version=6.18.34-talos, duplex=Full, firmware_version=0.8-4, hwaddr=fc:3f:db:0f:8e:18, kind=, link=eno1, pci_id=8086:15B7, port=TwistedPair, product=Ethernet Connection (2) I219-L…, type=ether, vendor=Intel Corporation` → **1** |
+| `talos_net_link_info` | `bus_path`, `driver`, `driver_version`, `duplex`, `firmware_version`, `hwaddr`, `kind`, `link`, `master`, `pci_id`, `port`, `product`, `type`, `vendor` | `bus_path=0000:00:1f.6, driver=e1000e, driver_version=6.18.34-talos, duplex=Full, firmware_version=0.8-4, hwaddr=fc:3f:db:0f:8e:18, kind=, link=eno1, master=, pci_id=8086:15B7, port=TwistedPair, product=Ethernet Connection (2) I219-L…, type=ether, vendor=Intel Corporation` → **1** |
 | `talos_net_link_mtu_bytes` | `link` | `link=bond0` → **1500** |
 | `talos_net_link_rx_bytes_per_second` | `link` | `link=eno1` → **7.68669e+06** |
 | `talos_net_link_rx_bytes_total` † | `link` | `link=eno1` → **7.90789e+12** |
@@ -463,6 +463,13 @@ cluster only published temperature and fan limits, so the `frequency`, `power` a
 | `talos_net_link_tx_errors_total` † | `link` | `link=bond0` → **0** |
 | `talos_net_link_tx_packets_total` † | `link` | `link=eno1` → **7.25061e+09** |
 | `talos_net_link_up` | `link` | `link=eno1` → **1** |
+
+`master` on `talos_net_link_info` names the bond or bridge an interface is enslaved to, and
+is empty for a topmost interface. A bond's byte counters already include its slaves', so a
+per-node throughput sum has to filter `master=""`; adding every interface reports a bonded
+node at roughly twice its traffic. On the reference cluster `bond0` exists but has no
+slaves, so every link there has an empty `master` — the double count is latent, not
+something that cluster shows.
 
 ### Disks
 
@@ -627,7 +634,7 @@ Three things worth knowing before you get there:
    not-yet-done optimization.
 
 **Label cardinality is bounded and static.** The widest label sets are on `_info` metrics
-(14 labels on `talos_hw_pcidevice_info` and `talos_net_link_info`), but each is still just
+(14 labels on `talos_hw_pcidevice_info`, 15 on `talos_net_link_info`), but each is still just
 one series per device, fixed by the machine. No label takes an unbounded value — the
 highest-cardinality one is `bdf`, at about 26 per node. Nothing here depends on request
 volume, pod count, or PID.

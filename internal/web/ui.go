@@ -421,7 +421,10 @@ func computeStats(rows []nodeRow) stats {
 func mostCommon(counts map[string]int) string {
 	best, bestN := "", 0
 	for v, n := range counts {
-		if n > bestN {
+		// Ties break on the string, not on map order. A 2-2 version split — a
+		// rollout in progress, the situation the card exists for — otherwise
+		// flips the headline version on every poll.
+		if n > bestN || (n == bestN && v < best) {
 			best, bestN = v, n
 		}
 	}
@@ -1452,6 +1455,12 @@ func collapsePolicy(cores []coreStat) cpuPolicy {
 		}
 	}
 	p.Mixed = len(govs) > 1 || len(mins) > 1 || len(maxs) > 1
+	if p.Mixed {
+		// Leave the fields empty. The template's {{if .Policy.Mixed}} guard is the
+		// only thing keeping an arbitrary map-ordered pick off screen, and any
+		// second consumer would silently show a policy only some cores have.
+		return p
+	}
 	for g := range govs {
 		p.Governor = g
 	}
@@ -1584,6 +1593,23 @@ func pctOf(part, whole uint64) int {
 	default:
 		return p
 	}
+}
+
+// pctOfF is pctOf for float inputs — the ones that can be negative (a sensor
+// reading) or fractional (a share of a small whole). The conversion must not
+// happen at the call site: converting a negative float to an unsigned integer is
+// implementation-defined, saturating to 0 on arm64 and wrapping to ~2^64 on
+// amd64, where pctOf's clamp then renders a cold sensor as 100% of its critical
+// limit. The ratio is taken in float, so nothing is ever converted unsafely.
+func pctOfF(part, whole float64) int {
+	if !(part > 0) || !(whole > 0) {
+		return 0
+	}
+	p := int(part / whole * 100)
+	if p > 100 {
+		return 100
+	}
+	return p
 }
 
 // memoryModule is one DIMM row for the dashboard, parsed from
@@ -1837,7 +1863,7 @@ func (d *dashboard) volumesFrom(n *snapshot.Node, node string) []volumeRow {
 			Kind:   fs.Kind,
 		}
 		if fs.SizeBytes > 0 {
-			row.UsedPct = pctOf(uint64(fs.UsedBytes), uint64(fs.SizeBytes))
+			row.UsedPct = pctOfF(fs.UsedBytes, fs.SizeBytes)
 		}
 		if v, ok := known[fs.PV]; ok {
 			row.Named = true
@@ -1876,7 +1902,7 @@ func filesystemsFrom(n *snapshot.Node) []filesystemRow {
 			Size:       humanize.IBytes(uint64(fs.SizeBytes)),
 			Used:       humanize.IBytes(uint64(fs.UsedBytes)),
 			Avail:      humanize.IBytes(uint64(fs.AvailBytes)),
-			UsedPct:    pctOf(uint64(fs.UsedBytes), uint64(fs.SizeBytes)),
+			UsedPct:    pctOfF(fs.UsedBytes, fs.SizeBytes),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].MountPoint < out[j].MountPoint })
@@ -1932,10 +1958,14 @@ func diskDevicesFrom(n *snapshot.Node) ([]diskDevice, string) {
 
 // netLink is one network interface for the links page.
 type netLink struct {
-	Name      string
-	Type      string
-	Kind      string // "" for a physical NIC
-	Physical  bool
+	Name     string
+	Type     string
+	Kind     string // "" for a physical NIC
+	Physical bool
+	// master is the bond or bridge this interface slaves to ("" = topmost). Not
+	// rendered: it lets the summary add each node's throughput once instead of
+	// counting a bond and its slaves.
+	master    string
 	HWAddr    string
 	Driver    string
 	Versions  string // driver / firmware, when reported
@@ -1996,6 +2026,7 @@ func netLinksFrom(n *snapshot.Node) []netLink {
 			Type:     l.Type,
 			Kind:     l.Kind,
 			Physical: l.Kind == "",
+			master:   l.Master,
 			HWAddr:   l.HWAddr,
 			Driver:   l.Driver,
 			BusPath:  l.BusPath,
@@ -2123,6 +2154,10 @@ type sensorGroup struct {
 	Unit  string // unit of the displayed values (°C, RPM, ...)
 	Rows  []sensorReading
 	Chips int // distinct chips in this group
+
+	// chipNames is the set behind Chips, kept so the page summary can dedupe
+	// chips across kinds instead of adding the per-card counts.
+	chipNames []string
 }
 
 // sensorSummary is the sensors page health strip.
@@ -2189,7 +2224,7 @@ func sensorsFrom(n *snapshot.Node) []sensorGroup {
 			if limit, ok := sn.Limits[of]; ok && limit > 0 {
 				r.HasLimit, r.LimitOf = true, of
 				r.Limit = strconv.FormatFloat(limit, 'f', sensorPrecision[kind], 64)
-				r.Pct = pctOf(uint64(sn.Value*1000), uint64(limit*1000))
+				r.Pct = pctOfF(sn.Value, limit)
 				break
 			}
 		}
@@ -2218,11 +2253,16 @@ func sensorsFrom(n *snapshot.Node) []sensorGroup {
 			}
 			return rows[i].Name() < rows[j].Name()
 		})
+		names := make([]string, 0, len(chips[kind]))
+		for c := range chips[kind] {
+			names = append(names, c)
+		}
 		groups = append(groups, sensorGroup{
-			Title: sensorKindTitles[kind],
-			Unit:  sensorUnits[kind],
-			Rows:  rows,
-			Chips: len(chips[kind]),
+			Title:     sensorKindTitles[kind],
+			Unit:      sensorUnits[kind],
+			Rows:      rows,
+			Chips:     len(names),
+			chipNames: names,
 		})
 	}
 	return groups
@@ -2232,9 +2272,16 @@ func sensorsFrom(n *snapshot.Node) []sensorGroup {
 func sensorSummaryFrom(groups []sensorGroup) sensorSummary {
 	var s sensorSummary
 	var hottest, closest float64
+	// Chips counts distinct chips on the node, not the sum of the per-card
+	// counts: a k10temp chip reporting temperature and frequency is one chip, an
+	// amdgpu reporting temp, fan and voltage is still one chip. Adding the card
+	// figures gives an upper bound that changes with the driver's sensor mix.
+	chips := map[string]struct{}{}
 	for _, g := range groups {
 		s.Sensors += len(g.Rows)
-		s.Chips += g.Chips
+		for _, c := range g.chipNames {
+			chips[c] = struct{}{}
+		}
 		for _, r := range g.Rows {
 			if r.Alarm {
 				s.Alarms++
@@ -2256,6 +2303,7 @@ func sensorSummaryFrom(groups []sensorGroup) sensorSummary {
 			}
 		}
 	}
+	s.Chips = len(chips)
 	return s
 }
 
@@ -2888,8 +2936,10 @@ type netSummary struct {
 //
 // The fleet rates are summed from the per-interface rates rather than from a
 // node-level counter, because there is no node-level one: /proc/net/dev is
-// per-interface. Loopback is included — it is real traffic on this node, and
-// excluding it would make the strip disagree with the table.
+// per-interface. Only topmost interfaces count: a bond's counters already
+// include its slaves', so adding eno1 and eno2 on top of bond0 would report a
+// bonded node at roughly twice its traffic. Loopback never reaches here — the
+// collector keeps physical ethernet links and the logical kinds in keptKinds.
 func netSummaryFrom(links []netLink) netSummary {
 	var sum netSummary
 	var rx, tx float64
@@ -2904,7 +2954,7 @@ func netSummaryFrom(links []netLink) netSummary {
 		if l.HasProblem {
 			sum.Problems++
 		}
-		if l.HasRates && l.Up {
+		if l.HasRates && l.Up && l.master == "" {
 			rx += l.rxPerSecond
 			tx += l.txPerSecond
 		}

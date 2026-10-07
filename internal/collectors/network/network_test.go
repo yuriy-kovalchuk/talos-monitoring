@@ -126,6 +126,14 @@ func link(name, kind string, up bool, speed int, mtu uint32) resource.Resource {
 	return l
 }
 
+// index sets the ifindex pair LinkStatus uses to relate a slave to its bond or
+// bridge.
+func index(l resource.Resource, idx, master uint32) {
+	spec := l.(*talosnet.LinkStatus).TypedSpec()
+	spec.Index = idx
+	spec.MasterIndex = master
+}
+
 func address(linkName, addr string) resource.Resource {
 	a := talosnet.NewAddressStatus(talosnet.NamespaceName, linkName+"/"+addr)
 	spec := a.TypedSpec()
@@ -246,6 +254,35 @@ func TestCollectExportsLinkStateAndAddresses(t *testing.T) {
 	}
 }
 
+// A bond's counters already include its slaves', so anything that adds up a
+// node's throughput has to know which interfaces are slaves. LinkStatus relates
+// them by interface index; the exporter resolves that to a name so both the
+// links page and PromQL can count the traffic once.
+func TestBondSlavesReportTheirMaster(t *testing.T) {
+	bond, eno1, eno2 := link("bond0", "bond", true, 1000, 1500),
+		link("eno1", "", true, 1000, 1500), link("eno2", "", true, 1000, 1500)
+	index(bond, 10, 0)
+	index(eno1, 11, 10)
+	index(eno2, 12, 10)
+
+	e := newNetEnv(t, []resource.Resource{bond, eno1, eno2},
+		[]resource.Resource{address("bond0", "10.0.0.10/24")}, twoScrapeDev)
+	fams := e.collect(t)
+
+	want := map[string]string{"bond0": "", "eno1": "bond0", "eno2": "bond0"}
+	for _, l := range e.snap.Node("node-1").Links {
+		if l.Master != want[l.Name] {
+			t.Errorf("snapshot %s master = %q, want %q", l.Name, l.Master, want[l.Name])
+		}
+	}
+	if _, ok := sample(t, fams, "talos_net_link_info", map[string]string{"link": "eno1", "master": "bond0"}); !ok {
+		t.Error("link_info has no master=bond0 series for eno1")
+	}
+	if _, ok := sample(t, fams, "talos_net_link_info", map[string]string{"link": "bond0", "master": ""}); !ok {
+		t.Error("link_info has no empty-master series for the bond itself")
+	}
+}
+
 // Rates need two samples. The first scrape must publish counters but no rate,
 // rather than a rate computed against zero, which would report the whole
 // since-boot total as if it happened in one interval.
@@ -357,8 +394,13 @@ func TestCollectorIdentity(t *testing.T) {
 
 // The structural guard: every string this collector writes to the snapshot
 // must be reachable from /metrics, and its families must obey the contract.
+// A bonded topology, so the guard sees a non-empty Master rather than skipping
+// an empty one.
 func TestMetricContractAndSnapshotCoverage(t *testing.T) {
-	e := newNetEnv(t, []resource.Resource{link("enp1s0", "", true, 1000, 1500)},
+	bond, enp := link("bond0", "bond", true, 1000, 1500), link("enp1s0", "", true, 1000, 1500)
+	index(bond, 10, 0)
+	index(enp, 11, 10)
+	e := newNetEnv(t, []resource.Resource{bond, enp},
 		[]resource.Resource{address("enp1s0", "10.0.0.10/24")}, twoScrapeDev)
 	e.collect(t)
 	e.now = e.now.Add(10 * time.Second)
