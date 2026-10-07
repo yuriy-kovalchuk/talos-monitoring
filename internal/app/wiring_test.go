@@ -117,6 +117,14 @@ func TestNewWiresEveryCollectorAndAppliesDefaults(t *testing.T) {
 	if a.srv.ReadHeaderTimeout == 0 {
 		t.Error("ReadHeaderTimeout is zero; header reads need their own deadline")
 	}
+	// Idle keep-alive connections otherwise live for the life of the process.
+	// The deadline has to sit above the scrape interval, or the server closes
+	// Prometheus's pooled connection between scrapes and every scrape pays a
+	// fresh handshake.
+	if a.srv.IdleTimeout <= defaultScrapeInterval {
+		t.Errorf("IdleTimeout = %v, want more than the %v scrape interval",
+			a.srv.IdleTimeout, defaultScrapeInterval)
+	}
 }
 
 // A name that was never registered is skipped, not an error: both the flag
