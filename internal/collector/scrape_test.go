@@ -943,6 +943,52 @@ func TestCachedExpositionIsGatheredOncePerCollection(t *testing.T) {
 // countingGatherer lets the test hold a registry by value.
 type countingGatherer struct{ *prometheus.Registry }
 
+// flakyCollector makes Registry.Gather fail on its first call — two identical
+// series is a consistency error — and succeed afterwards.
+type flakyCollector struct{ calls int }
+
+func (c *flakyCollector) Describe(chan<- *prometheus.Desc) {}
+
+func (c *flakyCollector) Collect(ch chan<- prometheus.Metric) {
+	c.calls++
+	d := prometheus.NewDesc("flaky_gauge", "h", nil, nil)
+	if c.calls == 1 {
+		ch <- prometheus.MustNewConstMetric(d, prometheus.GaugeValue, 1)
+		ch <- prometheus.MustNewConstMetric(d, prometheus.GaugeValue, 2)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(d, prometheus.GaugeValue, 2)
+}
+
+// TestFailedGatherIsNotCached: the memoisation must not survive a failed Gather.
+// The sync.Once it used to sit behind consumed the attempt, so the collector's
+// series stayed missing from /metrics until the next collection replaced the
+// entry — up to an hour for an inventory collector — while the dashboard went on
+// showing the values from the snapshot. The one case where the two renderers
+// disagree, and the exporter never says so.
+func TestFailedGatherIsNotCached(t *testing.T) {
+	fc := &flakyCollector{}
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(fc)
+
+	e := &entry{reg: reg, ts: time.Now()}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	if fams := e.families(log, "n1", "test"); fams != nil {
+		t.Fatalf("first read returned %d families, want nil (the gather must fail)", len(fams))
+	}
+	if fams := e.families(log, "n1", "test"); len(fams) != 1 {
+		t.Fatalf("second read returned %d families, want 1: a failed gather must not be cached", len(fams))
+	}
+	if fams := e.families(log, "n1", "test"); len(fams) != 1 {
+		t.Fatalf("third read returned %d families, want 1", len(fams))
+	}
+	// Success is still memoised: one failed gather plus one good one, not three.
+	if fc.calls != 2 {
+		t.Errorf("registry gathered %d times, want 2 (success memoised, failure not)", fc.calls)
+	}
+}
+
 // A node whose frequent collectors are all cached and healthy must not be
 // reported down because the one collector due this round failed.
 //
