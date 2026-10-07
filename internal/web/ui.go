@@ -1494,7 +1494,9 @@ func humanDuration(d time.Duration) string {
 	}
 }
 
-// freqMHz renders a kilohertz frequency as megahertz (no decimals when whole).
+// freqMHz renders a hertz frequency as megahertz (no decimals when whole).
+// The hertz convention is the collector's: cpufreq reports kilohertz and cpu.go
+// multiplies by 1e3 before the value reaches the snapshot or /metrics.
 func freqMHz(hz float64) string {
 	mhz := hz / 1e6
 	if mhz == math.Trunc(mhz) {

@@ -175,7 +175,9 @@ type Sensor struct {
 	Alarm    float64
 }
 
-// Core is one hardware thread's live state.
+// Core is one hardware thread's live state. The frequencies are hertz, like
+// every other speed in this package: the collector converts cpufreq's
+// kilohertz at its own boundary.
 type Core struct {
 	Index     int
 	HasUsage  bool
