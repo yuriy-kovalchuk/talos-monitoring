@@ -103,23 +103,34 @@ type key struct {
 // families is immutable once built: mergeFamilies rebuilds family headers
 // rather than appending into these.
 type entry struct {
-	reg  *prometheus.Registry
-	ts   time.Time
-	once sync.Once
+	reg *prometheus.Registry
+	ts  time.Time
+
+	// Not sync.Once: a failed Gather must not be memoised. Once consumed the
+	// attempt, the collector's series stayed absent from /metrics until the next
+	// collection replaced the entry — up to an hour for an inventory collector —
+	// while the dashboard went on showing the values from the snapshot. Two
+	// renderers, one collection: the exposition has to come back on the next read.
+	mu   sync.Mutex
 	fams []*dto.MetricFamily
+	got  bool // fams is valid; set only on a successful Gather
 }
 
-// families returns the entry's exposition, gathering it on first use.
+// families returns the entry's exposition, gathering it on first use. A failed
+// gather is not cached, so the next read tries again.
 func (e *entry) families(log *slog.Logger, node, collector string) []*dto.MetricFamily {
-	e.once.Do(func() {
-		f, err := e.reg.Gather()
-		if err != nil {
-			log.Error("gathering cached collector data failed",
-				"node", node, "collector", collector, "err", err)
-			return
-		}
-		e.fams = f
-	})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.got {
+		return e.fams
+	}
+	f, err := e.reg.Gather()
+	if err != nil {
+		log.Error("gathering cached collector data failed",
+			"node", node, "collector", collector, "err", err)
+		return nil
+	}
+	e.fams, e.got = f, true
 	return e.fams
 }
 
