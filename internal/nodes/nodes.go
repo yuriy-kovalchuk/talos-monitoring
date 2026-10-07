@@ -82,12 +82,24 @@ func New(log *slog.Logger, reg prometheus.Registerer) *Manager {
 	}
 }
 
+// SetClientset overrides the Kubernetes client used by Run. It must be called
+// before Run; without it Run resolves the client itself (in-cluster config,
+// then the usual kubeconfig rules). Tests inject a fake so the parts of the
+// system that depend on discovery can be driven without an API server.
+func (m *Manager) SetClientset(cs kubernetes.Interface) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clientset = cs
+}
+
 // Run starts node discovery and blocks until ctx is done.
 // Kubernetes client construction failures are logged and retried;
 // API failures afterwards are retried by the informer itself. Run never
 // fails hard.
 func (m *Manager) Run(ctx context.Context) {
+	m.mu.RLock()
 	cs := m.clientset
+	m.mu.RUnlock()
 	if cs == nil {
 		for {
 			var err error
