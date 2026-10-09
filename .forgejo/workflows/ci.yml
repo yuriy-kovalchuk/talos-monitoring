@@ -38,7 +38,11 @@ jobs:
         # across runs (needs `cache: enabled: true` in the runner config).
         uses: https://data.forgejo.org/actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26"
+          # Patch-pinned for the same reason as the GitHub workflow: the toolchain
+          # here is the standard library govulncheck judges, and "1.26" resolves to
+          # go1.26.8, which predates the go1.26.9 security fixes. Keep in step with
+          # the go.mod toolchain line and the Dockerfile base image.
+          go-version: "1.26.9"
 
       - name: Install golangci-lint
         run: |
