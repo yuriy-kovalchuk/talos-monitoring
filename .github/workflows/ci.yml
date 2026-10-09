@@ -31,7 +31,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26"
+          # Pinned to a patch, not "1.26": setup-go runs with GOTOOLCHAIN=local, so
+          # the toolchain installed here is the standard library govulncheck judges.
+          # "1.26" resolved to go1.26.8, which predates the net/http, net/textproto,
+          # crypto/tls and html/template fixes that go1.26.9 carries. Keep in step
+          # with the go.mod toolchain line and the Dockerfile base image.
+          go-version: "1.26.9"
           cache: true
 
       - name: Install golangci-lint
