@@ -1,8 +1,6 @@
 module github.com/yuriy-kovalchuk/talos-monitoring
 
-go 1.26.6
-
-toolchain go1.26.9
+go 1.27.2
 
 require (
 	github.com/cosi-project/runtime v1.14.1
