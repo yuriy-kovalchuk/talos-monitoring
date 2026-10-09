@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -333,5 +334,60 @@ func TestPruneEmptySetKeepsEverything(t *testing.T) {
 	}
 	if _, ok := c.cache["live"]; !ok {
 		t.Error("Prune dropped a live node")
+	}
+}
+
+// TestDegradedReportsStaleDiskInventory pins the shape that used to be
+// invisible: the refresh fails, a cached list is served, Collect returns nil.
+// The scrape must not fail and the cached disks must still be exported - but
+// the failure has to be reported rather than dropped.
+func TestDegradedReportsStaleDiskInventory(t *testing.T) {
+	c := testCollector(fixtures(), mount("/dev/nvme0n1p4", 1<<30, 1<<29, "/var"))
+	reg := prometheus.NewRegistry()
+	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if d := c.Degraded("node-a"); len(d) != 0 {
+		t.Fatalf("a clean collection reported %v", d)
+	}
+
+	// Force the inventory due, then make the list fail.
+	c.mu.Lock()
+	cached := c.cache["node-a"]
+	cached.ts = cached.ts.Add(-2 * time.Hour)
+	c.cache["node-a"] = cached
+	c.mu.Unlock()
+	c.state = func(*collector.NodeClient) state.CoreState {
+		return fakeState{err: errors.New("cosi unavailable")}
+	}
+
+	reg = prometheus.NewRegistry()
+	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
+		t.Fatalf("a failed refresh with a cache must not fail the scrape: %v", err)
+	}
+	fams, _ := reg.Gather()
+	found := false
+	for _, f := range fams {
+		if f.GetName() == "talos_block_disk_info" && len(f.GetMetric()) > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the cached disk list was not re-registered on a failed refresh")
+	}
+	d := c.Degraded("node-a")
+	if len(d) != 1 || d[0].Reason != collector.ReasonInventory {
+		t.Errorf("Degraded = %+v, want one %q degradation", d, collector.ReasonInventory)
+	}
+
+	// A successful refresh clears it: ts stayed at the last success, so the
+	// next tick retries rather than waiting out another hour.
+	c.state = func(*collector.NodeClient) state.CoreState { return fixtures() }
+	reg = prometheus.NewRegistry()
+	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if d := c.Degraded("node-a"); len(d) != 0 {
+		t.Errorf("after a successful refresh Degraded = %+v, want empty", d)
 	}
 }

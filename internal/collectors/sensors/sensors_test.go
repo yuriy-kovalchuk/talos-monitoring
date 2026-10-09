@@ -704,3 +704,21 @@ func TestPowerFallsBackToAverageAndReadsTheCap(t *testing.T) {
 		t.Errorf("board power cap = %v W, want 300", got)
 	}
 }
+
+// TestDegradedReflectsSelfDisable: the disable flag is cluster-wide, so every
+// node reports it - that is the real blast radius of one node's permission
+// error. Stopped tells the scraper the round reached the node zero times, so
+// the round cannot vote on talos_node_up.
+func TestDegradedReflectsSelfDisable(t *testing.T) {
+	c := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if d := c.Degraded("n1"); len(d) != 0 {
+		t.Fatalf("a live collector reported %v", d)
+	}
+	if err := c.disable("n1"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	d := c.Degraded("n1")
+	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || !d[0].Stopped {
+		t.Errorf("Degraded = %+v, want one stopped %q degradation", d, collector.ReasonPermission)
+	}
+}

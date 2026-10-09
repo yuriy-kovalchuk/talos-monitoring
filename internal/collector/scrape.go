@@ -75,7 +75,12 @@ type Scraper struct {
 	scrapeErrors *prometheus.CounterVec
 	collectDur   *prometheus.GaugeVec
 	collections  *prometheus.CounterVec
-	refreshDur   prometheus.Gauge
+	degraded     *prometheus.GaugeVec
+	// degradedOn is which reasons are currently 1 per (node, collector),
+	// guarded by mu. It exists so a reason that clears goes back to 0 instead
+	// of lingering as a stale series.
+	degradedOn map[key]map[string]bool
+	refreshDur prometheus.Gauge
 
 	mu       sync.Mutex
 	cache    map[key]*entry
@@ -181,7 +186,15 @@ func NewScraper(base prometheus.Registerer, opts Options) *Scraper {
 		Help: "Wall time of the most recent scheduler tick that collected anything, in seconds. " +
 			"Approaching the scrape interval means one replica is no longer keeping up.",
 	})
-	base.MustRegister(nodeUp, scrapeErrors, collectDur, collections, refreshDur)
+	degraded := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "talos_monitoring_collector_degraded",
+		Help: "1 while a collector serves partial data for a node, 0 once it recovers. " +
+			"reason=permission is a file-read path switched off because the monitor ServiceAccount " +
+			"lacks os:admin; reason=inventory is a cached inventory that has not been refreshed since " +
+			"its last success. Series appear on the first degradation, so a healthy cluster carries " +
+			"none and an alert written == 1 cannot arm on absence of data.",
+	}, []string{"node", "collector", "reason"})
+	base.MustRegister(nodeUp, scrapeErrors, collectDur, collections, degraded, refreshDur)
 
 	return &Scraper{
 		log:               opts.Log,
@@ -198,9 +211,11 @@ func NewScraper(base prometheus.Registerer, opts Options) *Scraper {
 		scrapeErrors:      scrapeErrors,
 		collectDur:        collectDur,
 		collections:       collections,
+		degraded:          degraded,
 		refreshDur:        refreshDur,
 		cache:             make(map[key]*entry),
 		inflight:          make(map[key]struct{}),
+		degradedOn:        make(map[key]map[string]bool),
 		up:                make(map[string]bool),
 		lastSuccess:       make(map[string]time.Time),
 	}
@@ -425,8 +440,21 @@ func (s *Scraper) scrapeNode(ctx context.Context, n nodes.Node, enabled []Collec
 				s.fail(n.Name, c.Name(), err)
 				return
 			}
+			// A nil return is not the same as a complete collection. Two shapes
+			// serve partial data and used to be indistinguishable from a clean
+			// scrape: a collector that self-disabled on a permission error, and a
+			// collector re-serving a cached inventory whose refresh keeps failing.
+			// Both kept collections_total ticking and left the error counter at
+			// zero, so the only trace was one old log line.
+			var deg []Degradation
+			if dr, ok := c.(DegradedReporter); ok {
+				deg = dr.Degraded(n.Name)
+			}
+			s.noteDegraded(n.Name, c.Name(), deg)
 			s.store(n.Name, c.Name(), sub)
-			succeeded.Add(1)
+			if !stopped(deg) {
+				succeeded.Add(1)
+			}
 		}(c)
 	}
 	wg.Wait()
@@ -575,6 +603,63 @@ func (s *Scraper) fail(node, name string, err error) {
 	}
 }
 
+// noteDegraded publishes one (node, collector) pair's partial-data state.
+//
+// The gauge lives on the base registry, not the per-collection sub-registry:
+// the scraper hands out a fresh registry every collection, so anything a
+// collector registered itself would vanish between collections. Transitions
+// are logged because the state can last for hours and the metric alone does
+// not say when it started.
+func (s *Scraper) noteDegraded(node, name string, deg []Degradation) {
+	k := key{node: node, collector: name}
+	active := make(map[string]bool, len(deg))
+	for _, d := range deg {
+		active[d.Reason] = true
+	}
+
+	s.mu.Lock()
+	prev := s.degradedOn[k]
+	if len(active) == 0 {
+		delete(s.degradedOn, k)
+	} else {
+		s.degradedOn[k] = active
+	}
+	for r := range prev {
+		if !active[r] {
+			s.degraded.WithLabelValues(node, name, r).Set(0)
+			s.log.Info("collector partial data cleared",
+				"node", node, "collector", name, "reason", r)
+		}
+	}
+	for r := range active {
+		s.degraded.WithLabelValues(node, name, r).Set(1)
+		if !prev[r] {
+			s.log.Warn("collector serving partial data",
+				"node", node, "collector", name, "reason", r,
+				"hint", "permission: the monitor ServiceAccount needs the os:admin role (Helm value talos.roles), then restart the exporter")
+		}
+	}
+	s.mu.Unlock()
+}
+
+// stopped reports whether any degradation means the collector stopped
+// contacting the node at all.
+//
+// Such a round is not evidence of reachability. A self-disabled collector
+// returns nil before making a single RPC, and it used to do succeeded++, which
+// kept talos_node_up at 1 - the exporter's single source of truth for
+// reachability - for a node the exporter had not spoken to in hours. The
+// RPC-based collectors are unaffected by the os:admin gap, so a real node still
+// stays up; the verdict only changes where nothing was actually attempted.
+func stopped(deg []Degradation) bool {
+	for _, d := range deg {
+		if d.Stopped {
+			return true
+		}
+	}
+	return false
+}
+
 // NodeUp reports whether a node is reachable, and whether it has been scraped
 // at all yet.
 //
@@ -624,6 +709,12 @@ func (s *Scraper) dropGone(live []nodes.Node) {
 			s.scrapeErrors.DeletePartialMatch(prometheus.Labels{"node": node})
 			s.collectDur.DeletePartialMatch(prometheus.Labels{"node": node})
 			s.collections.DeletePartialMatch(prometheus.Labels{"node": node})
+			s.degraded.DeletePartialMatch(prometheus.Labels{"node": node})
+			for k := range s.degradedOn {
+				if k.node == node {
+					delete(s.degradedOn, k)
+				}
+			}
 		}
 	}
 }

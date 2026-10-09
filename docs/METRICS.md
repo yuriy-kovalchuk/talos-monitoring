@@ -1,6 +1,6 @@
 # Metrics reference
 
-Every metric `talos-monitoring` exports — **180 families**, 4 311 series on the reference
+Every metric `talos-monitoring` exports — **181 families**, 4 311 series on the reference
 cluster (4 nodes, 40 threads, 105 PCI devices, 47 disks, 45 block devices, 40 sensors,
 46 services, 18 extension entries, 124 kernel params, 72 modules, 88 volumes, 3 GPUs,
 `--collectors.cpu.mode-seconds` on).
@@ -506,6 +506,7 @@ something that cluster shows.
 | `talos_monitoring_node_scrape_errors_total` † | `collector`, `err` | `collector=block, err=other` → **0** |
 | `talos_monitoring_collector_duration_seconds` | `collector` | `collector=pci` → **0.516** |
 | `talos_monitoring_collections_total` † | `collector` | `collector=cpu` → **13** |
+| `talos_monitoring_collector_degraded` | `collector`, `reason` | **no series** on the reference cluster (`os:admin` is granted); `collector=sensors, reason=permission` → **1** without it |
 | `talos_monitoring_refresh_duration_seconds` | — | **0.0413** |
 
 These answer the two questions that decide the deployment shape: **how much load is this
@@ -523,6 +524,29 @@ near-instant and would drag the gauge to zero, hiding the cost of the rounds tha
 work. Measured on the reference cluster: **41ms** for a steady-state round across 4 nodes,
 against a 30s scrape interval. Getting close to that interval means one replica is no
 longer keeping up.
+
+`talos_monitoring_collector_degraded` is how a collector says *"I ran, I exported
+something, and part of it is missing"*. `Collect` has one error value, so that state was
+otherwise inexpressible: a collector that self-disabled on a permission error returned
+`nil` before making a single RPC, and a collector re-serving a cached inventory whose
+refresh keeps failing returned `nil` too. Both kept `talos_monitoring_collections_total`
+ticking, moved no error counter, and left one `Warn` line from hours ago as the only trace
+— while the dashboard went on rendering the cached values.
+
+- `reason=permission` — a file-read path switched off because the monitor ServiceAccount
+  lacks `os:admin`: `sensors` and `gpu` (whole collector), `pci` sysfs enrichment, network
+  throughput, and the per-core CPU frequency fallback. The disable flag is cluster-wide,
+  so one node's RBAC gap lights up every node's series — that is the real blast radius.
+- `reason=inventory` — a cached disk or DIMM list that has not refreshed since its last
+  success. The cached list is still the best data available, so the scrape does not fail;
+  `ts` stays at the last success and the refresh retries every tick.
+
+Series appear on the first degradation and return to 0 on recovery, so a healthy cluster
+carries none and `talos_monitoring_collector_degraded == 1` cannot arm on absence of data.
+A whole-collector self-disable also stops counting as evidence for `talos_node_up`, because
+such a round reached the node zero times; the RPC-based collectors are unaffected by the
+`os:admin` gap, so a reachable node stays up and the verdict only changes where nothing was
+actually attempted.
 
 ---
 

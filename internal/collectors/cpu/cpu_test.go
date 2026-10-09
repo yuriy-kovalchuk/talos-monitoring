@@ -603,3 +603,19 @@ func TestModeSecondsAreOptIn(t *testing.T) {
 		t.Errorf("mode seconds on: got %d series, want 20 (2 cores x 10 modes)", n)
 	}
 }
+
+// TestDegradedReflectsFrequencyFallbackDisable: the file fallback supplies
+// per-core min/max/governor when the RPC returns empty. Once it is off the rest
+// of the cpu data still arrives, so the round still reaches the node and the
+// degradation must not be marked Stopped.
+func TestDegradedReflectsFrequencyFallbackDisable(t *testing.T) {
+	c := testCollector(nil)
+	if d := c.Degraded("n1"); len(d) != 0 {
+		t.Fatalf("a live collector reported %v", d)
+	}
+	c.warnFallback("n1")
+	d := c.Degraded("n1")
+	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
+		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)
+	}
+}

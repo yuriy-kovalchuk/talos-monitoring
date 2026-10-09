@@ -55,6 +55,10 @@ type MemoryCollector struct {
 type memInventory struct {
 	ts      time.Time
 	modules []moduleRow // identity labels plus measurements
+	// failedAt is when the last re-list failed, zero when the last one
+	// succeeded. ts stays at the last success so the next tick retries;
+	// failedAt is what makes a long-running failure visible instead of silent.
+	failedAt time.Time
 }
 
 // WithSnapshot points the collector at a snapshot store.
@@ -133,6 +137,15 @@ func (m *MemoryCollector) Collect(ctx context.Context, node *collector.NodeClien
 			// Nothing cached and the list failed: usage still registered above,
 			// so report the failure without discarding it.
 			return err
+		} else {
+			// Cached modules are still the best data available, so the scrape
+			// does not fail — but the error used to be dropped here, so a DIMM
+			// list that had been unlistable for hours counted as a success,
+			// moved no error counter and logged nothing.
+			cached.failedAt = time.Now()
+			m.mu.Lock()
+			m.cache[name] = cached
+			m.mu.Unlock()
 		}
 	}
 	if c := m.snap; c != nil {
@@ -235,6 +248,19 @@ func registerMemInfo(node string, mi *machinepb.MemInfo, reg prometheus.Register
 	}, []string{"node"})
 	reg.MustRegister(hs)
 	hs.WithLabelValues(node).Set(float64(mi.GetHugepagesize()) * 1024)
+}
+
+// Degraded implements collector.DegradedReporter: a DIMM list that has not
+// refreshed since its last success is re-registered from cache and looks
+// exactly like a clean collection.
+func (m *MemoryCollector) Degraded(node string) []collector.Degradation {
+	m.mu.Lock()
+	cached, ok := m.cache[node]
+	m.mu.Unlock()
+	if ok && !cached.failedAt.IsZero() {
+		return []collector.Degradation{{Reason: collector.ReasonInventory}}
+	}
+	return nil
 }
 
 // Prune implements collector.Pruner: drop the cached DIMM list for departed

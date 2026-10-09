@@ -346,4 +346,14 @@ func (c *Collector) disable(nodeName string) error {
 	return nil
 }
 
+// Degraded implements collector.DegradedReporter: once self-disabled the
+// collector returns nil without contacting the node, which is not evidence of
+// reachability. The flag is cluster-wide, so every node reports it.
+func (c *Collector) Degraded(string) []collector.Degradation {
+	if c.disabled.Load() {
+		return []collector.Degradation{{Reason: collector.ReasonPermission, Stopped: true}}
+	}
+	return nil
+}
+
 var _ collector.Collector = (*Collector)(nil)

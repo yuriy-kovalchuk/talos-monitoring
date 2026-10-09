@@ -1084,3 +1084,128 @@ func findMetricOK(fams []*dto.MetricFamily, family string, want map[string]strin
 	}
 	return 0, true
 }
+
+// degradedCollector is a fakeCollector that can report partial data, so the
+// scraper's half of the DegradedReporter contract is testable without a real
+// collector.
+type degradedCollector struct {
+	fakeCollector
+	mu  sync.Mutex
+	deg []Degradation
+}
+
+func (d *degradedCollector) Degraded(string) []Degradation {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]Degradation(nil), d.deg...)
+}
+
+func (d *degradedCollector) set(deg ...Degradation) {
+	d.mu.Lock()
+	d.deg = deg
+	d.mu.Unlock()
+}
+
+// degradedValue returns the degraded gauge for one (node, collector, reason),
+// and false when the series does not exist yet.
+func degradedValue(families []*dto.MetricFamily, node, collectorName, reason string) (float64, bool) {
+	m := findMetric(families, "talos_monitoring_collector_degraded", map[string]string{
+		"node": node, "collector": collectorName, "reason": reason})
+	if m == nil {
+		return 0, false
+	}
+	return m.GetGauge().GetValue(), true
+}
+
+// TestDegradedGaugeTracksTransitions: a collector that returns nil while
+// serving partial data must be visible in the exposition. Before the channel
+// existed, collections_total kept ticking on schedule, no error counter moved,
+// and the only trace was one Warn line from the round that tripped it.
+func TestDegradedGaugeTracksTransitions(t *testing.T) {
+	c := &degradedCollector{fakeCollector: fakeCollector{name: "sens", class: Live, value: 1}}
+	list := oneNode
+	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, c)
+
+	fams := e.tick()
+	if _, ok := degradedValue(fams, "n1", "sens", ReasonInventory); ok {
+		t.Error("a clean collection published a degraded series")
+	}
+
+	c.set(Degradation{Reason: ReasonInventory})
+	e.advance(31 * time.Second)
+	fams = e.tick()
+	if v, ok := degradedValue(fams, "n1", "sens", ReasonInventory); !ok || v != 1 {
+		t.Errorf("degraded{reason=inventory} = %v (present=%v), want 1", v, ok)
+	}
+	// A partial collection is still a collection: cadence stays honest and the
+	// data is still served.
+	if n := countOf(t, fams, "talos_monitoring_collections_total",
+		map[string]string{"node": "n1", "collector": "sens"}); n != 2 {
+		t.Errorf("collections_total = %v, want 2 (a degraded round is still a round)", n)
+	}
+	if v := valueOf(t, fams, "test_gauge", map[string]string{"node": "n1", "collector": "sens"}); v != 1 {
+		t.Errorf("partial data was not served: test_gauge = %v", v)
+	}
+	// Partial data that still reached the node does vote on reachability.
+	if up := valueOf(t, fams, "talos_node_up", map[string]string{"node": "n1"}); up != 1 {
+		t.Errorf("talos_node_up = %v, want 1: the round did contact the node", up)
+	}
+
+	// Recovery goes back to 0 rather than deleting the series, so a panel keeps
+	// its flat line instead of reading "no data".
+	c.set()
+	e.advance(31 * time.Second)
+	fams = e.tick()
+	if v, ok := degradedValue(fams, "n1", "sens", ReasonInventory); !ok || v != 0 {
+		t.Errorf("after recovery degraded{reason=inventory} = %v (present=%v), want 0", v, ok)
+	}
+
+	// Each reason is its own series, and switching reasons clears the old one.
+	c.set(Degradation{Reason: ReasonPermission})
+	e.advance(31 * time.Second)
+	fams = e.tick()
+	if v, _ := degradedValue(fams, "n1", "sens", ReasonPermission); v != 1 {
+		t.Errorf("degraded{reason=permission} = %v, want 1", v)
+	}
+	if v, _ := degradedValue(fams, "n1", "sens", ReasonInventory); v != 0 {
+		t.Errorf("the inventory series should have cleared, got %v", v)
+	}
+}
+
+// TestSelfDisabledCollectorDoesNotAssertReachability: sensors and gpu return
+// nil before making a single RPC once a permission error has self-disabled
+// them. That round used to do succeeded++, which kept talos_node_up - the
+// exporter's single source of truth for reachability - at 1 for a node the
+// exporter had not spoken to at all.
+func TestSelfDisabledCollectorDoesNotAssertReachability(t *testing.T) {
+	c := &degradedCollector{fakeCollector: fakeCollector{name: "sens", class: Live, value: 1}}
+	c.set(Degradation{Reason: ReasonPermission, Stopped: true})
+	list := oneNode
+	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, c)
+
+	fams := e.tick()
+	if up := valueOf(t, fams, "talos_node_up", map[string]string{"node": "n1"}); up != 0 {
+		t.Errorf("talos_node_up = %v, want 0: a collector that made no RPC proved nothing", up)
+	}
+	// The consequence is real, and it is the documented down-node contract: a
+	// node no collector reached exports nothing but the up gauge. The collector
+	// is still scheduled and still counted, so the cadence stays honest.
+	if m := findMetric(fams, "test_gauge", map[string]string{"node": "n1", "collector": "sens"}); m != nil {
+		t.Error("a node read down must export no collector data")
+	}
+	if n := countOf(t, fams, "talos_monitoring_collections_total",
+		map[string]string{"node": "n1", "collector": "sens"}); n != 1 {
+		t.Errorf("collections_total = %v, want 1: the collector stays on cadence", n)
+	}
+
+	// A round that reaches the node votes again, with no sticky state.
+	c.set()
+	e.advance(31 * time.Second)
+	fams = e.tick()
+	if up := valueOf(t, fams, "talos_node_up", map[string]string{"node": "n1"}); up != 1 {
+		t.Errorf("talos_node_up = %v, want 1 after a round that contacted the node", up)
+	}
+	if v := valueOf(t, fams, "test_gauge", map[string]string{"node": "n1", "collector": "sens"}); v != 1 {
+		t.Errorf("test_gauge = %v, want 1 once the collector reaches the node again", v)
+	}
+}

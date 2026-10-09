@@ -77,3 +77,44 @@ type NodeClient struct {
 type Pruner interface {
 	Prune(live map[string]struct{})
 }
+
+// Degradation reasons: the fixed set of things a collector can report as
+// given up on. They are label values on
+// talos_monitoring_collector_degraded, so the set is part of the metric
+// contract and lives here rather than in each collector.
+const (
+	// ReasonPermission is a file-read path switched off because the monitor
+	// ServiceAccount lacks os:admin.
+	ReasonPermission = "permission"
+	// ReasonInventory is a cached inventory that has not been refreshed since
+	// its last success: the data is still the best available, but it is no
+	// longer observed.
+	ReasonInventory = "inventory"
+)
+
+// Degradation is one thing a collector gave up on for one node while still
+// returning usable data.
+type Degradation struct {
+	Reason string
+	// Stopped is true when the collector stopped contacting the node at all -
+	// a whole-collector self-disable. Such a round is not evidence that the
+	// node is reachable: Collect returns nil without making a single RPC, and
+	// the scraper must not let it vote on talos_node_up.
+	Stopped bool
+}
+
+// DegradedReporter is an optional Collector interface for collectors that can
+// serve partial data.
+//
+// Collect has one error value, so "I ran, I exported something, and part of it
+// is missing" is otherwise inexpressible: the scrape counts as a success, no
+// error counter moves, and the only trace is a log line that fired once hours
+// ago. The scraper calls Degraded after a nil Collect and publishes the result
+// as talos_monitoring_collector_degraded.
+//
+// Implementations report state they already keep - a self-disable flag, a
+// cached inventory's last failed refresh - and must be safe to call
+// concurrently for different nodes.
+type DegradedReporter interface {
+	Degraded(node string) []Degradation
+}

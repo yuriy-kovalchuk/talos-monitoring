@@ -209,3 +209,13 @@ func (c *Collector) Prune(live map[string]struct{}) {
 		}
 	}
 }
+
+// Degraded implements collector.DegradedReporter. Not Stopped: link state and
+// addresses are still collected, so the round still reaches the node. Only the
+// /proc/net/dev byte counters - and therefore throughput - are off.
+func (c *Collector) Degraded(string) []collector.Degradation {
+	if c.countersDisabled.Load() {
+		return []collector.Degradation{{Reason: collector.ReasonPermission}}
+	}
+	return nil
+}

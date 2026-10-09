@@ -427,3 +427,18 @@ func TestMetricContractAndSnapshotCoverage(t *testing.T) {
 		t.Error(v)
 	}
 }
+
+// TestDegradedReflectsCounterDisable: link state and addresses are still
+// collected when /proc/net/dev is denied, so the round reaches the node and the
+// degradation is not Stopped - only throughput goes dark.
+func TestDegradedReflectsCounterDisable(t *testing.T) {
+	c := New(discardLog())
+	if d := c.Degraded("n1"); len(d) != 0 {
+		t.Fatalf("a live collector reported %v", d)
+	}
+	c.countersDisabled.Store(true)
+	d := c.Degraded("n1")
+	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
+		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)
+	}
+}
