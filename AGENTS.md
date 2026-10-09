@@ -73,7 +73,7 @@ exposition format back, and neither `/metrics` nor a page render ever triggers a
 
 ## Working here
 
-- Go 1.26.x, Talos machinery v1.13.x (match the cluster), client-go v0.35.x,
+- Go 1.27.x, Talos machinery v1.13.x (match the cluster), client-go v0.35.x,
   client_golang v1.24.x and htmx v2.0.9 (vendored). No charting library.
 - Reference cluster: `KUBECONFIG=~/.kube/workload`, 4 nodes, Talos v1.13.4. Verify live —
   several bugs here were only caught by running against it, not by tests.
