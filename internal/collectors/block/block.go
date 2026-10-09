@@ -88,6 +88,10 @@ func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 type diskInventory struct {
 	ts   time.Time
 	rows []diskRow
+	// failedAt is when the last refresh attempt failed, zero when the last
+	// attempt succeeded. ts stays at the last success so the next tick retries;
+	// failedAt is what makes a long-running failure visible instead of silent.
+	failedAt time.Time
 }
 
 // New returns the block collector.
@@ -144,6 +148,16 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 			c.mu.Unlock()
 		} else if !ok {
 			return err
+		} else {
+			// The cached list is still the best data available, so the scrape
+			// does not fail. It used to fail silently instead: the error was
+			// dropped here, so a node whose disk listing had been unlistable for
+			// hours counted as a success, moved no error counter and logged
+			// nothing. Record it for Degraded; the scraper logs the transition.
+			cached.failedAt = time.Now()
+			c.mu.Lock()
+			c.cache[name] = cached
+			c.mu.Unlock()
 		}
 	}
 	if c.snap != nil {
@@ -283,6 +297,19 @@ func (c *Collector) listDisks(ctx context.Context, node *collector.NodeClient) (
 		})
 	}
 	return out, nil
+}
+
+// Degraded implements collector.DegradedReporter: a disk list that has not
+// refreshed since its last success is served from cache and looks exactly like
+// a clean collection.
+func (c *Collector) Degraded(node string) []collector.Degradation {
+	c.mu.Lock()
+	cached, ok := c.cache[node]
+	c.mu.Unlock()
+	if ok && !cached.failedAt.IsZero() {
+		return []collector.Degradation{{Reason: collector.ReasonInventory}}
+	}
+	return nil
 }
 
 // Prune implements collector.Pruner: drop the cached disk list for departed

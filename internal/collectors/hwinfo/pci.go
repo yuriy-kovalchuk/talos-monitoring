@@ -317,6 +317,16 @@ func (c *PCICollector) disable(nodeName string) {
 	}
 }
 
+// Degraded implements collector.DegradedReporter. Not Stopped: the COSI device
+// list is still collected, so the round still reaches the node. Only the sysfs
+// enrichment - the negotiated link width and the AER counters - is off.
+func (c *PCICollector) Degraded(string) []collector.Degradation {
+	if c.disabled.Load() {
+		return []collector.Degradation{{Reason: collector.ReasonPermission}}
+	}
+	return nil
+}
+
 // registerPCIEnriched registers the device inventory together with whatever
 // sysfs detail was readable.
 func registerPCIEnriched(nodeName string, list resource.List, details map[string]pciDetail, reg prometheus.Registerer) error {

@@ -767,6 +767,17 @@ func (c *Collector) warnFallback(nodeName string) {
 	}
 }
 
+// Degraded implements collector.DegradedReporter. Not Stopped: the CPUStats RPC
+// still runs, so the round still reaches the node. What is off is the file
+// fallback that supplies per-core min/max/governor when the RPC returns empty -
+// and once fallbackWarned is set it is off for every node, permanently.
+func (c *Collector) Degraded(string) []collector.Degradation {
+	if c.fallbackWarned.Load() {
+		return []collector.Degradation{{Reason: collector.ReasonPermission}}
+	}
+	return nil
+}
+
 // readSysfsFile reads a small sysfs file and returns its trimmed content.
 func readSysfsFile(ctx context.Context, api machineAPI, path string) (string, error) {
 	s, err := collector.ReadFile(ctx, api, path)

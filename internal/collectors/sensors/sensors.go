@@ -462,6 +462,19 @@ func (c *Collector) disable(nodeName string) error {
 	return nil
 }
 
+// Degraded implements collector.DegradedReporter.
+//
+// The disable flag is cluster-wide, so every node reports it. That is the real
+// blast radius of one node's permission error, and a per-node series is what
+// makes it visible: the collector returns nil without a single RPC, so the
+// scrape otherwise looks entirely healthy.
+func (c *Collector) Degraded(string) []collector.Degradation {
+	if c.disabled.Load() {
+		return []collector.Degradation{{Reason: collector.ReasonPermission, Stopped: true}}
+	}
+	return nil
+}
+
 // Prune implements collector.Pruner: drop the discovered sensor layout for
 // departed nodes. This is the largest per-node cache in the project — one
 // sensorMeta per sensor, each with paths and a limits map.

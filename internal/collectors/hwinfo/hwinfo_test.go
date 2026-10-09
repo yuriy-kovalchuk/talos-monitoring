@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -794,5 +795,70 @@ func TestMemoryPruneEmptySetKeepsEverything(t *testing.T) {
 	}
 	if _, ok := m.cache["live"]; !ok {
 		t.Error("Prune dropped a live node")
+	}
+}
+
+// TestMemoryDegradedReportsStaleDIMMInventory: the DIMM re-list failing while a
+// cached list is served used to be entirely silent - no error counter, no log
+// line, and a collections_total that kept ticking.
+func TestMemoryDegradedReportsStaleDIMMInventory(t *testing.T) {
+	c := testMemoryCollector(&countingState{CoreState: fixtures()}, stubMemAPI{mi: fixtureMemInfo()})
+	reg := prometheus.NewRegistry()
+	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if d := c.Degraded("node-a"); len(d) != 0 {
+		t.Fatalf("a clean collection reported %v", d)
+	}
+
+	c.mu.Lock()
+	cached := c.cache["node-a"]
+	cached.ts = cached.ts.Add(-2 * time.Hour)
+	c.cache["node-a"] = cached
+	c.mu.Unlock()
+	c.state = func(*collector.NodeClient) state.CoreState {
+		return fakeState{err: errors.New("cosi unavailable")}
+	}
+
+	reg = prometheus.NewRegistry()
+	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
+		t.Fatalf("a failed re-list with a cache must not fail the scrape: %v", err)
+	}
+	fams, _ := reg.Gather()
+	found := false
+	for _, f := range fams {
+		if f.GetName() == "talos_hw_memory_module_info" && len(f.GetMetric()) > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the cached DIMM inventory was not re-registered on a failed re-list")
+	}
+	d := c.Degraded("node-a")
+	if len(d) != 1 || d[0].Reason != collector.ReasonInventory {
+		t.Errorf("Degraded = %+v, want one %q degradation", d, collector.ReasonInventory)
+	}
+
+	c.state = func(*collector.NodeClient) state.CoreState { return fixtures() }
+	reg = prometheus.NewRegistry()
+	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if d := c.Degraded("node-a"); len(d) != 0 {
+		t.Errorf("after a successful re-list Degraded = %+v, want empty", d)
+	}
+}
+
+// TestPCIDegradedReflectsEnrichmentDisable: the COSI device list still runs, so
+// the round reaches the node and the collector must not be marked Stopped.
+func TestPCIDegradedReflectsEnrichmentDisable(t *testing.T) {
+	c := NewPCI(discardLog())
+	if d := c.Degraded("node-a"); len(d) != 0 {
+		t.Fatalf("a live collector reported %v", d)
+	}
+	c.disable("node-a")
+	d := c.Degraded("node-a")
+	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
+		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)
 	}
 }

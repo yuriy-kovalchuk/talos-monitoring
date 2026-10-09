@@ -366,3 +366,19 @@ func TestMetricContractAndSnapshotCoverage(t *testing.T) {
 		t.Error(v)
 	}
 }
+
+// TestDegradedReflectsSelfDisable: like sensors, gpu returns nil before making
+// a single RPC once self-disabled, which is not evidence of reachability.
+func TestDegradedReflectsSelfDisable(t *testing.T) {
+	c := New(discardLog())
+	if d := c.Degraded("n1"); len(d) != 0 {
+		t.Fatalf("a live collector reported %v", d)
+	}
+	if err := c.disable("n1"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	d := c.Degraded("n1")
+	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || !d[0].Stopped {
+		t.Errorf("Degraded = %+v, want one stopped %q degradation", d, collector.ReasonPermission)
+	}
+}
