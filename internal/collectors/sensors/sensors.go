@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"maps"
 	"regexp"
 	"sort"
 	"strconv"
@@ -169,9 +168,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 			Chip: meta.Chip, ChipName: meta.ChipName, Sensor: meta.Sensor,
 			Kind: meta.Kind, Label: meta.Label, Value: v,
 		}
-		if len(meta.Limits) > 0 {
-			r.Limits = maps.Clone(meta.Limits)
-		}
+		r.Limits = knownLimits(meta)
 		if a, ok := alarms[i]; ok {
 			r.HasAlarm, r.Alarm = true, a
 		}
@@ -236,7 +233,8 @@ func (m *sensorMetrics) set(node string, meta sensorMeta, v float64) {
 	}
 	g.WithLabelValues(labels...).Set(v * u.scale)
 
-	if len(meta.Limits) == 0 {
+	limits := knownLimits(meta)
+	if len(limits) == 0 {
 		return
 	}
 	l, ok := m.limits[meta.Kind]
@@ -249,10 +247,7 @@ func (m *sensorMetrics) set(node string, meta sensorMeta, v float64) {
 		m.reg.MustRegister(l)
 		m.limits[meta.Kind] = l
 	}
-	for kind, lv := range meta.Limits {
-		if isUnsetThreshold(meta.Kind, lv*u.scale) {
-			continue
-		}
+	for kind, lv := range limits {
 		l.WithLabelValues(append(append([]string{}, labels...), kind)...).Set(lv * u.scale)
 	}
 }
@@ -262,6 +257,22 @@ const (
 	absoluteZeroC   = -273.15
 	implausiblyHotC = 1000.0
 )
+
+// knownLimits drops unset-threshold sentinels, so the dashboard and the metric carry the same limits.
+func knownLimits(meta sensorMeta) map[string]float64 {
+	scale := sensorUnits[meta.Kind].scale
+	var out map[string]float64
+	for kind, lv := range meta.Limits {
+		if isUnsetThreshold(meta.Kind, lv*scale) {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]float64, len(meta.Limits))
+		}
+		out[kind] = lv
+	}
+	return out
+}
 
 // isUnsetThreshold drops a driver's "not set" sentinel: an unknown value is an absent series.
 func isUnsetThreshold(kind string, celsius float64) bool {

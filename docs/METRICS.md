@@ -1,9 +1,9 @@
 # Metrics reference
 
-Every metric `talos-monitoring` exports — **193 families**, 4 311 series on the reference
-cluster (4 nodes, 40 threads, 105 PCI devices, 47 disks, 45 block devices, 40 sensors,
-46 services, 18 extension entries, 124 kernel params, 72 modules, 88 volumes, 3 GPUs,
-`--collectors.cpu.mode-seconds` on).
+Every metric `talos-monitoring` exports — **193 families**. The series count below was
+measured when the reference cluster had 4 nodes: 4 311 series (40 threads, 105 PCI devices,
+47 disks, 45 block devices, 40 sensors, 46 services, 18 extension entries, 124 kernel
+params, 72 modules, 88 volumes, 3 GPUs, `--collectors.cpu.mode-seconds` on).
 
 Examples below are real values from that cluster. `node` is on every per-node metric, so
 it's left out of the tables. **†** marks a counter (everything else is a gauge). **‡**
@@ -523,6 +523,11 @@ WireGuard links are reported; the CNI's per-pod veths are dropped.
 | `talos_net_link_tx_packets_total` † | `link` | `link=eno1` → **7.25061e+09** |
 | `talos_net_link_up` | `link` | `link=eno1` → **1** |
 
+`talos_net_link_up` is 1 when the interface passes traffic. WireGuard links have no carrier
+and report operational state `unknown` forever, so for those the kernel's `UP` and `LOWER_UP`
+flags decide, as `ip link` does; reading the operational state alone reported every live
+tunnel as down. `talos_net_link_carrier` stays the raw carrier bit, 0 on a tunnel.
+
 `master` on `talos_net_link_info` names the bond or bridge an interface is enslaved to, and
 is empty for a topmost interface. A bond's byte counters already include its slaves', so a
 per-node throughput sum has to filter `master=""`; adding every interface reports a bonded
@@ -756,8 +761,8 @@ populated, bits 0–2 give CPU status (1 enabled, 2 disabled by user, 3 disabled
 two bits worth alerting on.
 
 **Sensor thresholds are whatever the driver publishes.** Some are placeholders — NVMe
-reports `min = -273.15°C`, absolute zero, meaning "no minimum". The UI reads `critical`
-then `max` and ignores the rest.
+reports `min = -273.15°C`, absolute zero, meaning "no minimum". The UI reads `critical`,
+then `max`, then `cap` (a GPU's power limit) and ignores the rest.
 
 **`talos_node_cpu_freq_hertz` reads high.** The scrape itself is load, and cpufreq
 governors react in microseconds — measured +2.9% on an idle 16-thread node, +121% on a

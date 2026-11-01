@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collector"
+	"github.com/yuriy-kovalchuk/talos-monitoring/internal/snapshot"
 )
 
 // fakeStream satisfies machine.MachineService_ListClient for tests
@@ -522,12 +523,19 @@ func TestUnsetTemperatureThresholdIsNotExported(t *testing.T) {
 			"/sys/class/hwmon/hwmon0/temp1_crit":  "84850",    // real
 		},
 	}
-	c := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	snap := snapshot.New()
+	c := New(slog.New(slog.NewTextHandler(io.Discard, nil))).WithSnapshot(snap)
 	c.api = func(*collector.NodeClient) fileAPI { return api }
 	reg := prometheus.NewRegistry()
 	if err := c.Collect(context.Background(),
 		testNode(), reg); err != nil {
 		t.Fatalf("Collect: %v", err)
+	}
+	// The dashboard reads the snapshot: a sentinel there showed a 65261.8 °C limit no metric carried.
+	if n := snap.Node(testNode().Node.Name); n == nil || len(n.Sensors) != 1 {
+		t.Fatalf("snapshot sensors = %+v, want one reading", n)
+	} else if got := n.Sensors[0].Limits; len(got) != 1 || got["critical"] != 84.85 {
+		t.Errorf("snapshot limits = %v, want only critical 84.85", got)
 	}
 	fams, err := reg.Gather()
 	if err != nil {
