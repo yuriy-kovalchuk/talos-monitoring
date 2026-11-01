@@ -4,13 +4,22 @@ A Prometheus exporter and htmx dashboard for [Talos Linux](https://www.talos.dev
 node hardware and OS health. One pod, no DaemonSet, nothing installed on the
 node.
 
-Talos has no shell and nothing you can install on the node, so the usual
-privileged node-exporter DaemonSet is out. But every node already serves a gRPC
-machine API (the one `talosctl` uses), so a single Deployment dials each node's
-API directly and reads it in-cluster through a Talos ServiceAccount. That
-also reaches what node_exporter never had: per-DIMM and per-socket inventory,
-PCI devices, Talos service health, boot stage, volume encryption, and kernel
-parameters vs. their defaults.
+It started as an experiment in a different way to monitor Talos nodes. The
+usual approach is a privileged node-exporter DaemonSet; this one instead reads
+the gRPC machine API every Talos node already serves (the one `talosctl` uses).
+A single Deployment dials each node's API directly and authenticates in-cluster
+through a Talos ServiceAccount, so nothing runs on the node itself. The API
+also reaches what node_exporter does not cover: per-DIMM and per-socket
+inventory, PCI devices, Talos service health, boot stage, volume encryption,
+and kernel parameters vs. their defaults.
+
+![Built-in cluster dashboard](docs/assets/ui/dashboard-overview.png)
+The Grafana dashboards shipped with the chart add long-term history:
+
+![Talos Overview Grafana dashboard](docs/assets/grafana/overview.png)
+
+More screenshots: [built-in dashboard](docs/built-in-dashboard.md) ·
+[Grafana dashboards](docs/grafana-dashboards.md).
 
 ## Design
 
@@ -114,7 +123,7 @@ Every GPU is reported with its model, PCI address and bound driver on
 `os:reader`. Live counters depend on the vendor:
 
 | | AMD (`amdgpu`) | NVIDIA |
-|---|---|---|
+| --- | --- | --- |
 | Identity and bound driver | ✅ `os:reader` | ✅ `os:reader` |
 | Utilisation, VRAM, GTT | ✅ `os:admin` (sysfs) | ❌ |
 | Temperature, fan, power | ✅ `os:admin` (hwmon) | ❌ |

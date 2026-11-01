@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`talos_kernel_module_info{state}` is lowercase** (`live`, was `Live`): Talos v1.14 reports modules as `KernelModuleStatus`; built-ins are dropped so the count is unchanged, and pre-v1.14 nodes fall back to `LoadedKernelModule`
 - Toolchain and dependencies: Go 1.27.3, Talos machinery v1.14.5, cosi runtime v1.16.4, client-go v0.37.2, client_golang v1.25.0, grpc v1.85.0, htmx 2.0.11, golangci-lint v2.15.0, Helm v4.3.1, distroless `static-debian13`, latest SHA-pinned Actions. `k8s.io/kube-openapi` stays at the revision apimachinery v0.37 requires
 - CD runs the full CI checks before publishing a release; the CI token defaults to read-only
+- Screenshots retaken for the redesign, light and dark, under `docs/assets/ui/` and `docs/assets/grafana/`; the README shows a few and its intro is reworded
 - The README and chart notes describe the `KubeTalosAPIAccessConfig` machine-config document as the prerequisite, with the deprecated `machine.features.kubernetesTalosAPIAccess` kept for older Talos
 - `--inventory-interval` help says the flag is currently unused (every inventory collector declares its own 1h TTL)
 - Published images carry OCI labels (`org.opencontainers.image.source` links the GHCR package to the repository), with tags from `docker/metadata-action`. CI runs gofmt through golangci-lint instead of separate vet and format steps
