@@ -1,17 +1,10 @@
 {{define "node_health-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Health</div>
-  <h1>Health · {{.Node.Name}}</h1>
-</div>
-
 {{template "health-live" .}}
 {{end}}
 
 {{/* Polled on its own (GET /partials/nodes/<name>/health), swapped with
-     outerHTML. Service state is the fastest-moving thing on the dashboard, so
-     this refreshes on the same 15s cadence as the other node sections. The
-     container renders even with no data, so a collector that starts reporting
-     later is picked up without a page reload. */}}
+     outerHTML. The container renders even with no data, so a collector that
+     starts reporting later is picked up without a page reload. */}}
 {{define "health-live"}}
 <div id="health-live" hx-get="/partials/nodes/{{.Node.Name}}/health"
      hx-trigger="every 15s" hx-swap="outerHTML">
@@ -19,20 +12,26 @@
 
 <div class="stats">
   <div class="stat-card">
-    <div class="stat-label">Machine stage</div>
-    <div class="stat-value mono">{{if .Health.HasStage}}{{.Health.Stage}}{{else}}–{{end}}<span class="stat-sub">{{if .Health.HasStage}}{{if .Health.Ready}}ready{{else}}not ready{{end}}{{else}}not reported{{end}}</span></div>
+    <div class="tile-head">{{template "icon-overview"}}Machine stage</div>
+    <div class="stat-value{{if .Health.Ready}} ok{{else}} crit{{end}}">{{if .Health.HasStage}}{{.Health.Stage}}{{else}}–{{end}}</div>
+    <div class="tile-sub">{{if .Health.HasStage}}{{if .Health.Ready}}ready{{else}}not ready{{end}}{{else}}not reported{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Services healthy</div>
-    <div class="stat-value{{if not .Health.Unhealthy}} ok{{end}}">{{.Health.Healthy}}<span class="stat-sub">of {{.Health.Total}} {{plural .Health.Total "service" "services"}}</span></div>
+    <div class="tile-head">{{template "icon-health"}}Services</div>
+    <div class="stat-value{{if not .Health.Unhealthy}} ok{{else}} crit{{end}}">{{.Health.Healthy}}<span class="unit">/ {{.Health.Total}} healthy</span></div>
+    <div class="tile-sub">{{.Health.Failing}} failing · {{.Health.Stopped}} stopped</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Not healthy</div>
-    <div class="stat-value{{if not .Health.Unhealthy}} ok{{end}}">{{.Health.Unhealthy}}<span class="stat-sub">{{.Health.Failing}} failing · {{.Health.Stopped}} stopped</span></div>
+    <div class="tile-head">{{template "icon-kernel"}}Clock</div>
+    {{if .TimeSync.Available}}
+    <div class="stat-value{{if .TimeSync.Synced}} ok{{else}} crit{{end}}">{{if .TimeSync.Synced}}synced{{else}}not synced{{end}}</div>
+    <div class="tile-sub">{{if .TimeSync.Offset}}offset {{.TimeSync.Offset}}{{else}}no offset reported{{end}}</div>
+    {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported</div>{{end}}
   </div>
   <div class="stat-card">
-    <div class="stat-label">Diagnostics</div>
-    <div class="stat-value{{if not .Health.Diagnostics}} ok{{end}}">{{len .Health.Diagnostics}}<span class="stat-sub">{{if .Health.Diagnostics}}warnings raised{{else}}none raised{{end}}</span></div>
+    <div class="tile-head">{{template "icon-about"}}Diagnostics</div>
+    <div class="stat-value{{if not .Health.Diagnostics}} ok{{else}} warn{{end}}">{{len .Health.Diagnostics}}</div>
+    <div class="tile-sub">{{if .Health.Diagnostics}}warnings raised{{else}}none raised{{end}}</div>
   </div>
 </div>
 
@@ -40,7 +39,7 @@
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">Diagnostics</span>
-    <span class="card-sub mono">{{len .Health.Diagnostics}} {{plural (len .Health.Diagnostics) "warning" "warnings"}}</span>
+    <span class="card-sub">{{len .Health.Diagnostics}} {{plural (len .Health.Diagnostics) "warning" "warnings"}}</span>
   </div>
   <div style="overflow-x:auto">
   <table class="table-fleet">
@@ -62,7 +61,7 @@
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">Unmet conditions</span>
-    <span class="card-sub mono">machine not ready at stage {{.Health.Stage}}</span>
+    <span class="card-sub">machine not ready at stage {{.Health.Stage}}</span>
   </div>
   <div style="overflow-x:auto">
   <table class="table-fleet">
@@ -77,54 +76,48 @@
 </div>
 {{end}}
 
-{{if .TimeSync.Available}}
-<div class="card">
-  <div class="card-head">
-    <span class="eyebrow">Clock</span>
-    <span class="card-sub mono">{{if .TimeSync.Synced}}synced{{else}}NOT synced{{end}}{{if .TimeSync.SyncDisabled}} · sync disabled in machineconfig{{end}}</span>
-  </div>
-  <div style="overflow-x:auto">
-  <table class="table-fleet">
-    <tbody>
-      <tr><td>Talos ntpd</td><td class="mono">{{if .TimeSync.Synced}}synced{{else}}not synced{{end}}</td></tr>
-      <tr><td>Kernel<div class="cell-sub">STA_UNSYNC clear</div></td><td class="mono">{{if .TimeSync.KernelSynced}}synced{{else}}not synced{{end}}{{if .TimeSync.State}} · {{.TimeSync.State}}{{end}}</td></tr>
-      {{if .TimeSync.Offset}}
-      <tr><td>Offset</td><td class="mono">{{.TimeSync.Offset}}<div class="cell-sub">max error {{.TimeSync.MaxError}}</div></td></tr>
-      <tr><td>Oscillator drift</td><td class="mono">{{.TimeSync.DriftPPM}}</td></tr>
-      {{end}}
-      <tr><td>Clock steps<div class="cell-sub">since boot</div></td><td class="mono">{{.TimeSync.Epoch}}</td></tr>
-    </tbody>
-  </table>
-  </div>
-</div>
-{{end}}
-
-
+{{/* A grid of small tiles reads faster than a long two-column table: the eye
+     finds the one that is not green. */}}
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">Services</span>
-    <span class="card-sub mono">{{.Health.Total}} {{plural .Health.Total "service" "services"}}{{if .Health.NoCheck}} · {{.Health.NoCheck}} without a health check{{end}}</span>
+    <span class="card-sub">{{.Health.Total}} {{plural .Health.Total "service" "services"}}{{if .Health.NoCheck}} · {{.Health.NoCheck}} without a health check{{end}}</span>
   </div>
-  <div style="overflow-x:auto">
-  <table class="table-fleet">
-    <thead><tr><th>Service</th><th>State</th></tr></thead>
-    <tbody>
-      {{range .Health.Services}}
-      <tr>
-        <td class="mono">{{.Name}}</td>
-        <td><span class="pill pill-{{.Tone}}"><span class="pill-dot"></span>{{.State}}</span></td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+  <div class="svc-grid">
+    {{range .Health.Services}}
+    <div class="svc svc-{{.Tone}}">
+      <span class="mono svc-name">{{.Name}}</span>
+      <span class="pill pill-{{.Tone}}"><span class="pill-dot"></span>{{.State}}</span>
+    </div>
+    {{end}}
   </div>
 </div>
 
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">Health</span></div>
-  <div class="empty">No health data yet. The <code>health</code> collector is disabled, or
-  it has not completed its first scrape.</div>
+  <div class="empty">No health data yet: the <code>health</code> collector is off or has not run yet.</div>
+</div>
+{{end}}
+
+<div class="grid-2">
+{{if and .Health.Available .TimeSync.Available}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">Clock</span>
+    <span class="card-sub">{{if .TimeSync.SyncDisabled}}sync disabled in machineconfig{{end}}</span>
+  </div>
+  <table class="kv">
+    <tbody>
+      <tr><th scope="row">Talos ntpd</th><td class="mono">{{if .TimeSync.Synced}}synced{{else}}<span class="pill-warn-text">not synced</span>{{end}}</td></tr>
+      <tr><th scope="row">Kernel</th><td class="mono">{{if .TimeSync.KernelSynced}}synced{{else}}<span class="pill-warn-text">not synced</span>{{end}}{{if .TimeSync.State}} · {{.TimeSync.State}}{{end}}</td></tr>
+      {{if .TimeSync.Offset}}
+      <tr><th scope="row">Offset</th><td class="mono">{{.TimeSync.Offset}}<div class="cell-sub">max error {{.TimeSync.MaxError}}</div></td></tr>
+      <tr><th scope="row">Oscillator drift</th><td class="mono">{{.TimeSync.DriftPPM}}</td></tr>
+      {{end}}
+      <tr><th scope="row">Clock steps</th><td class="mono">{{.TimeSync.Epoch}}<div class="cell-sub">since boot</div></td></tr>
+    </tbody>
+  </table>
 </div>
 {{end}}
 {{/* Its own collector, so it renders whether or not the health collector has reported. */}}
@@ -132,19 +125,19 @@
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">etcd</span>
-    <span class="card-sub mono">{{if not .HasLeader}}NO LEADER{{else if .Leader}}leader{{else}}follower{{end}}{{if .Learner}} · learner{{end}} · {{.Members}} {{plural .Members "member" "members"}}</span>
+    <span class="pill pill-{{if not .HasLeader}}down{{else}}ok{{end}}"><span class="pill-dot"></span>{{if not .HasLeader}}NO LEADER{{else if .Leader}}leader{{else}}follower{{end}}{{if .Learner}} · learner{{end}}</span>
   </div>
-  <div style="overflow-x:auto">
-  <table class="table-fleet">
+  <table class="kv">
     <tbody>
-      <tr><td>Database<div class="cell-sub">in use of file size</div></td><td class="mono"><span class="cell-bar"><span style="width:{{.InUsePct}}%"></span></span>{{.DBInUse}} of {{.DBSize}} ({{.InUsePct}}%)</td></tr>
-      <tr><td>Apply lag<div class="cell-sub">raft entries not yet applied</div></td><td class="mono">{{.ApplyLag}}</td></tr>
-      <tr><td>Alarms</td><td class="mono">{{if .Alarms}}{{range .Alarms}}<span class="pill-warn-text">{{.}}</span> {{end}}{{else}}none{{end}}{{if .Errors}}<div class="cell-sub">{{.Errors}} {{plural .Errors "error" "errors"}} in member status</div>{{end}}</td></tr>
-      <tr><td>Member</td><td class="mono">{{.MemberID}}<div class="cell-sub">protocol {{.Version}}</div></td></tr>
+      <tr><th scope="row">Database</th><td class="mono">{{.DBInUse}} in use of {{.DBSize}}<div class="meter {{tone .InUsePct}}"><span style="width:{{.InUsePct}}%"></span></div></td></tr>
+      <tr><th scope="row">Members</th><td class="mono">{{.Members}}</td></tr>
+      <tr><th scope="row">Apply lag</th><td class="mono">{{.ApplyLag}}<div class="cell-sub">raft entries not yet applied</div></td></tr>
+      <tr><th scope="row">Alarms</th><td class="mono">{{if .Alarms}}{{range .Alarms}}<span class="pill-warn-text">{{.}}</span> {{end}}{{else}}none{{end}}{{if .Errors}}<div class="cell-sub">{{.Errors}} {{plural .Errors "error" "errors"}} in member status</div>{{end}}</td></tr>
+      <tr><th scope="row">Member ID</th><td class="mono">{{.MemberID}}<div class="cell-sub">protocol {{.Version}}</div></td></tr>
     </tbody>
   </table>
-  </div>
 </div>
 {{end}}
+</div>
 </div>
 {{end}}

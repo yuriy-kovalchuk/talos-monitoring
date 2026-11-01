@@ -18,7 +18,7 @@ type nodeSummary struct {
 	LoadPct     int // clamped, for the inline bar
 	MemoryTotal string
 	MemoryDIMMs int
-	MemorySpeed int // MHz, first populated module
+	MemorySpeed int // MT/s, first populated module
 	DiskLocal   int
 	DiskNetwork int
 	DiskVirtual int
@@ -69,10 +69,10 @@ func summaryCPU(s *nodeSummary, snap *snapshot.Node) {
 
 func summaryMemory(s *nodeSummary, snap *snapshot.Node) {
 	mods, total := memoryModulesFrom(snap)
-	s.MemoryTotal, s.MemoryDIMMs = total, len(mods)
+	s.MemoryTotal, s.MemoryDIMMs = total, populatedModules(snap)
 	for _, m := range mods {
-		if m.SpeedMHz > 0 {
-			s.MemorySpeed = m.SpeedMHz
+		if m.SpeedMTs > 0 {
+			s.MemorySpeed = m.SpeedMTs
 			break
 		}
 	}

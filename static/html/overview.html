@@ -27,7 +27,7 @@
       {{range .Attention}}
       <tr>
         <td style="width:1%">
-          <span class="status-cell"><span class="dot {{if eq .Severity "down"}}dot-down{{else}}dot-ok{{end}}"></span>{{if eq .Severity "down"}}down{{else}}warn{{end}}</span>
+          <span class="status-cell"><span class="dot {{if eq .Severity "down"}}dot-down{{else}}dot-warn{{end}}"></span>{{if eq .Severity "down"}}down{{else}}warn{{end}}</span>
         </td>
         <td><a class="row-link" href="/nodes/{{.Node}}">{{.Node}}</a></td>
         <td>{{.Text}}</td>
@@ -45,39 +45,47 @@
 
 <div class="stats">
   <div class="stat-card">
-    <div class="stat-label">Cores</div>
-    <div class="stat-value">{{.Fleet.Cores}}<span class="stat-sub">{{.Fleet.Threads}} threads</span></div>
+    <div class="tile-head">{{template "icon-cpu"}}Cores</div>
+    <div class="stat-value">{{.Fleet.Cores}}</div>
+    <div class="tile-sub">{{.Fleet.Threads}} threads</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Memory installed</div>
-    <div class="stat-value mono">{{fallback .Fleet.Memory "–"}}<span class="stat-sub">{{.Fleet.DIMMs}} {{plural .Fleet.DIMMs "DIMM" "DIMMs"}}</span></div>
+    <div class="tile-head">{{template "icon-memory"}}Memory installed</div>
+    <div class="stat-value mono">{{fallback .Fleet.Memory "–"}}</div>
+    <div class="tile-sub">{{.Fleet.DIMMs}} {{plural .Fleet.DIMMs "DIMM" "DIMMs"}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Storage</div>
-    <div class="stat-value mono">{{fallback .Fleet.Storage "–"}}<span class="stat-sub">{{.Fleet.Disks}} {{plural .Fleet.Disks "disk" "disks"}}</span></div>
+    <div class="tile-head">{{template "icon-storage"}}Storage</div>
+    <div class="stat-value mono">{{fallback .Fleet.Storage "–"}}</div>
+    <div class="tile-sub">{{.Fleet.Disks}} {{plural .Fleet.Disks "disk" "disks"}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Busiest node</div>
+    <div class="tile-head">{{template "icon-metrics"}}Busiest node</div>
     {{if .Fleet.HasBusiest}}
-    <div class="stat-value mono">{{printf "%.1f" .Fleet.BusiestPct}}%<span class="stat-sub">{{.Fleet.BusiestNode}}{{if .Fleet.HasBusiestLoad}} · load {{printf "%.2f" .Fleet.BusiestLoad}}{{end}}</span></div>
+    <div class="stat-value {{tone .Fleet.BusiestPct}}">{{printf "%.1f" .Fleet.BusiestPct}}<span class="unit">% CPU</span></div>
+    <div class="meter {{tone .Fleet.BusiestPct}}"><span style="width:{{printf "%.0f" .Fleet.BusiestPct}}%"></span></div>
+    <div class="tile-sub">{{.Fleet.BusiestNode}}{{if .Fleet.HasBusiestLoad}} · load {{printf "%.2f" .Fleet.BusiestLoad}}{{end}}</div>
     {{else}}
-    <div class="stat-value mono">–</div>
+    <div class="stat-value">–</div>
     {{end}}
   </div>
   <div class="stat-card"{{if not .Fleet.GPUs}} data-fill="2wide"{{end}}>
-    <div class="stat-label">Images</div>
-    <div class="stat-value{{if eq .Fleet.Images 1}} ok{{end}}">{{.Fleet.Images}}<span class="stat-sub">{{if .Fleet.ImageNote}}all on {{.Fleet.ImageNote}}{{else if .Fleet.Images}}distinct schematics{{else}}not reported{{end}}</span></div>
+    <div class="tile-head">{{template "icon-image"}}Images</div>
+    <div class="stat-value{{if eq .Fleet.Images 1}} ok{{end}}">{{.Fleet.Images}}</div>
+    <div class="tile-sub">{{if .Fleet.ImageNote}}all on {{.Fleet.ImageNote}}{{else if .Fleet.Images}}distinct schematics{{else}}not reported{{end}}</div>
   </div>
   <div class="stat-card"{{if not .Fleet.GPUs}} data-fill="2wide"{{end}}>
-    <div class="stat-label">Services</div>
+    <div class="tile-head">{{template "icon-health"}}Services</div>
     {{if .Fleet.ServicesTotal}}
-    <div class="stat-value{{if not .Fleet.ServicesBad}} ok{{end}}">{{.Fleet.ServicesBad}}<span class="stat-sub">not healthy, of {{.Fleet.ServicesTotal}} fleet-wide</span></div>
+    <div class="stat-value{{if not .Fleet.ServicesBad}} ok{{else}} crit{{end}}">{{if .Fleet.ServicesBad}}{{.Fleet.ServicesBad}} not healthy{{else}}All OK{{end}}</div>
+    <div class="tile-sub">{{.Fleet.ServicesTotal}} services fleet-wide</div>
     {{else}}<div class="stat-value">–</div>{{end}}
   </div>
   {{if .Fleet.GPUs}}
   <div class="stat-card" data-fill="2">
-    <div class="stat-label">GPUs</div>
-    <div class="stat-value">{{.Fleet.GPUs}}<span class="stat-sub">on {{.Fleet.GPUNodes}} {{plural .Fleet.GPUNodes "node" "nodes"}}</span></div>
+    <div class="tile-head">{{template "icon-gpu"}}GPUs</div>
+    <div class="stat-value">{{.Fleet.GPUs}}</div>
+    <div class="tile-sub">on {{.Fleet.GPUNodes}} {{plural .Fleet.GPUNodes "node" "nodes"}}</div>
   </div>
   {{end}}
 </div>
@@ -167,9 +175,7 @@
   </table>
   </div>
   {{else}}
-  <div class="empty">No nodes discovered yet. In-cluster: check the service account RBAC
-  (get/list/watch on <code>nodes</code>). Locally: check <code>~/.kube/config</code> or
-  <code>KUBECONFIG</code>.</div>
+  <div class="empty">No nodes discovered yet. Check the RBAC for <code>nodes</code> (get, list, watch), or your kubeconfig when running locally.</div>
   {{end}}
 </div>
 

@@ -45,7 +45,7 @@ func TestNodeDetailDisks(t *testing.T) {
 	// Sizes are formatted from talos_block_disk_size_bytes now that the disk's
 	// pretty-printed size is no longer carried as a label, so the column reads
 	// like every other size in the UI ("932 GB", not Talos's "931.51 GB").
-	checkBody(t, body, "/dev/nvme0n1", "932 GB", "SM2263EN NVMe", "HDD", "2 local · 1.9 TB", "Attachment", "local")
+	checkBody(t, body, "/dev/nvme0n1", "932 GB", "SM2263EN NVMe", "HDD", "2 local · 1.9 TB", "local")
 	// Devices render sorted: /dev/nvme0n1 row before /dev/sda row.
 	if strings.Index(body, "/dev/nvme0n1") > strings.Index(body, "/dev/sda") {
 		t.Error("expected /dev/nvme0n1 row to render before /dev/sda row")
@@ -74,7 +74,7 @@ func TestStoragePageFoldsHealthyPseudoVolumesOnly(t *testing.T) {
 	// The failed directory volume is listed despite being a pseudo-volume.
 	checkBody(t, body, "/var/mnt", "mount target busy", "1 NOT READY")
 	// The healthy one is folded into the footnote instead.
-	checkBody(t, body, "1 healthy directory, overlay and symlink")
+	checkBody(t, body, "1 always-ready directory, overlay and symlink volume hidden")
 	if strings.Contains(body, ">/var/log\n") {
 		t.Error("healthy pseudo-volume rendered as a row")
 	}
@@ -110,7 +110,7 @@ func TestStoragePageRendersBlockIO(t *testing.T) {
 
 	checkBody(t, body, "Block I/O", "nvme0n1", "1.0 GiB", "2.0 GiB", "12,345", "25.0%", "partition")
 	// The caveat has to be on the page, not just in the docs.
-	checkBody(t, body, "do not sum")
+	checkBody(t, body, "partitions also count toward their disk")
 }
 
 func TestStoragePageBlankBusyWithoutUptime(t *testing.T) {

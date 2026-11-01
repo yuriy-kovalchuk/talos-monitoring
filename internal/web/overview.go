@@ -284,7 +284,7 @@ func enrichCPU(row *nodeRow, snap *snapshot.Node) {
 
 func enrichMemory(row *nodeRow, snap *snapshot.Node) {
 	mods, total := memoryModulesFrom(snap)
-	row.RAM, row.MemDIMMs = total, len(mods)
+	row.RAM, row.MemDIMMs = total, populatedModules(snap)
 	for _, m := range mods {
 		row.memMiB += m.SizeMiB
 	}

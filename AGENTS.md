@@ -17,11 +17,13 @@ internal/
   collector/            Collector interface, Registry, Scraper, Gatherer
   collectors/           hwinfo, block, cpu, nodeapi, network, sensors, sysstat,
                         health, identity, timesync, kernel, volumes, gpu, diskio, etcd
+  k8svolumes/           PersistentVolume informer that names node filesystems by PV
   snapshot/             typed per-node inventory — the UI's data source
   history/              in-RAM ring, frequency samples only (the CPU page's observed range)
   metricguard/          metric-contract + §1.1 checks the collector tests run
+  version/              build metadata injected by -ldflags
   web/                  router, templates, rendering
-static/                 embedded css, js (htmx, app.js), html, fonts
+static/                 embedded css, js (htmx, app.js, theme.js), html (icons.html), fonts
 ```
 
 Data path: `Talos API → collector →` both `a prometheus sub-registry → /metrics` and

@@ -39,7 +39,7 @@
         root.setAttribute('data-stale', '');
         // The banner is an aria-live region present from page load, so
         // inserting the text (not flipping visibility) is what gets announced.
-        if (banner) banner.textContent = 'Connection lost — showing the last values received.';
+        if (banner) banner.textContent = 'Connection lost. Showing the last values received.';
       }
     } else {
       failing.delete(elt);

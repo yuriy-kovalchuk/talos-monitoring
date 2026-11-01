@@ -1,9 +1,4 @@
 {{define "node_sensors-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Sensors</div>
-  <h1>Sensors · {{.Node.Name}}</h1>
-</div>
-
 {{template "sensors-live" .}}
 {{end}}
 
@@ -18,55 +13,52 @@
 {{if .SensorSummary.Available}}
 <div class="stats">
   <div class="stat-card">
-    <div class="stat-label">Hottest</div>
-    <div class="stat-value mono">{{fallback .SensorSummary.Hottest "–"}}<span class="stat-sub">{{.SensorSummary.HottestAt}}</span></div>
+    <div class="tile-head">{{template "icon-sensors"}}Hottest</div>
+    <div class="stat-value">{{fallback .SensorSummary.Hottest "–"}}</div>
+    <div class="tile-sub">{{.SensorSummary.HottestAt}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Closest to limit</div>
+    <div class="tile-head">{{template "icon-metrics"}}Closest to limit</div>
     {{if .SensorSummary.Closest}}
-    <div class="stat-value mono">{{.SensorSummary.Closest}}<span class="stat-sub">{{.SensorSummary.ClosestAt}}</span></div>
+    <div class="stat-value">{{.SensorSummary.Closest}}</div>
+    <div class="tile-sub">{{.SensorSummary.ClosestAt}}</div>
     {{else}}
-    <div class="stat-value mono">–<span class="stat-sub">no thresholds reported</span></div>
+    <div class="stat-value">–</div>
+    <div class="tile-sub">no thresholds reported</div>
     {{end}}
   </div>
   <div class="stat-card">
-    <div class="stat-label">Alarms</div>
-    <div class="stat-value{{if not .SensorSummary.Alarms}} ok{{end}}">{{.SensorSummary.Alarms}}<span class="stat-sub">{{if .SensorSummary.Alarms}}chip raised{{else}}none active{{end}}</span></div>
+    <div class="tile-head">{{template "icon-about"}}Alarms</div>
+    <div class="stat-value{{if not .SensorSummary.Alarms}} ok{{else}} crit{{end}}">{{if .SensorSummary.Alarms}}{{.SensorSummary.Alarms}}{{else}}none{{end}}</div>
+    <div class="tile-sub">{{if .SensorSummary.Alarms}}raised by the chip{{else}}no chip alarm active{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Sensors</div>
-    <div class="stat-value">{{.SensorSummary.Sensors}}<span class="stat-sub">{{.SensorSummary.Chips}} {{plural .SensorSummary.Chips "chip" "chips"}}</span></div>
+    <div class="tile-head">{{template "icon-pci"}}Sensors</div>
+    <div class="stat-value">{{.SensorSummary.Sensors}}</div>
+    <div class="tile-sub">on {{.SensorSummary.Chips}} {{plural .SensorSummary.Chips "chip" "chips"}}</div>
   </div>
 </div>
 {{end}}
 
 {{range .SensorGroups}}
 {{$g := .}}
+{{/* One row per sensor: a table scans faster than a wall of tiles, and the
+     meter column keeps "how close to its limit" visible at a glance. */}}
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">{{$g.Title}}</span>
-    <span class="card-sub mono">{{len $g.Rows}} {{plural (len $g.Rows) "sensor" "sensors"}} · {{$g.Chips}} {{plural $g.Chips "chip" "chips"}}</span>
+    <span class="card-sub">{{len $g.Rows}} {{plural (len $g.Rows) "sensor" "sensors"}} on {{$g.Chips}} {{plural $g.Chips "chip" "chips"}}</span>
   </div>
   <div style="overflow-x:auto">
-  <table class="table-fleet">
-    <thead>
-      <tr><th>Sensor</th><th>Reading</th><th>Of limit</th><th>Limit</th></tr>
-    </thead>
+  <table class="table-fleet sensor-table">
+    <thead><tr><th>Sensor</th><th>Chip</th><th>Reading</th><th>Of limit</th></tr></thead>
     <tbody>
       {{range $g.Rows}}
       <tr>
-        <td>
-          {{.Name}}
-          <div class="cell-sub">{{.ChipName}}</div>
-        </td>
-        <td class="mono">{{.Value}} {{$g.Unit}}{{if .Alarm}}<div class="cell-sub pill-warn-text">alarm raised</div>{{end}}</td>
-        <td class="mono">
-          {{if .HasLimit}}
-          <span class="cell-bar"><span style="width:{{.Pct}}%"></span></span>
-          {{.Pct}}%
-          {{else}}–{{end}}
-        </td>
-        <td class="mono">{{if .HasLimit}}{{.Limit}} {{$g.Unit}}<div class="cell-sub">{{.LimitOf}}</div>{{else}}<span class="muted">not reported</span>{{end}}</td>
+        <td>{{.Name}}{{if .Alarm}}<div class="cell-sub pill-warn-text">alarm raised</div>{{end}}</td>
+        <td class="mono muted">{{.ChipName}}</td>
+        <td class="mono reading{{if .HasLimit}} {{tone .Pct}}{{end}}">{{.Value}} {{$g.Unit}}</td>
+        <td class="mono">{{if .HasLimit}}<div class="limit-cell"><div class="meter {{tone .Pct}}"><span style="width:{{.Pct}}%"></span></div><span>{{.Pct}}% of {{.Limit}} {{.LimitOf}}</span></div>{{else}}<span class="muted">not reported</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>
@@ -78,8 +70,7 @@
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">Sensors</span></div>
-  <div class="empty">No sensor data yet. The <code>sensors</code> collector is disabled, or
-  file reads were refused (they need the <code>os:admin</code> role).</div>
+  <div class="empty">No sensor data yet: the <code>sensors</code> collector is off, or lacks the <code>os:admin</code> role.</div>
 </div>
 {{end}}
 </div>

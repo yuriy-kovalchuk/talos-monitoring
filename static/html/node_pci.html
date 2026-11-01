@@ -1,9 +1,4 @@
 {{define "node_pci-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / PCI</div>
-  <h1>PCI · {{.Node.Name}}</h1>
-</div>
-
 {{template "pci-live" .}}
 {{end}}
 
@@ -63,8 +58,7 @@
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">PCI</span></div>
-  <div class="empty">No PCI data yet · the <code>pci</code> collector is disabled, or the
-  node has not been scraped yet.</div>
+  <div class="empty">No PCI data yet: the <code>pci</code> collector is off or has not run yet.</div>
 </div>
 {{end}}
 </div>

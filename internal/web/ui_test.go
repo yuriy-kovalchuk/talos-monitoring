@@ -104,10 +104,12 @@ func TestSensorSummaryCountsEachChipOnce(t *testing.T) {
 func TestNetSummaryCountsBondedTrafficOnce(t *testing.T) {
 	links := []netLink{
 		{Name: "bond0", Up: true, HasRates: true, rxPerSecond: 1e8, txPerSecond: 2e7},
-		{Name: "eno1", Up: true, Physical: true, master: "bond0", HasRates: true,
+		{Name: "eno1", Up: true, Physical: true, HasRates: true,
 			rxPerSecond: 5e7, txPerSecond: 1e7},
-		{Name: "eno2", Up: true, Physical: true, master: "bond0", HasRates: true,
+		{Name: "eno2", Up: true, Physical: true, HasRates: true,
 			rxPerSecond: 5e7, txPerSecond: 1e7},
+		// A tunnel's traffic is encapsulated onto the NICs above, so it must not add to the total.
+		{Name: "wg0", Kind: "wireguard", Up: true, HasRates: true, rxPerSecond: 4e7, txPerSecond: 4e7},
 	}
 
 	s := netSummaryFrom(links)
@@ -116,8 +118,8 @@ func TestNetSummaryCountsBondedTrafficOnce(t *testing.T) {
 			s.RxRate, s.TxRate, formatRate(1e8), formatRate(2e7))
 	}
 	// Interface counts are not traffic: a slave is still an interface.
-	if s.Total != 3 || s.Up != 3 || s.Physical != 2 {
-		t.Errorf("interface counts = total %d, up %d, physical %d, want 3, 3, 2",
+	if s.Total != 4 || s.Up != 4 || s.Physical != 2 {
+		t.Errorf("interface counts = total %d, up %d, physical %d, want 4, 4, 2",
 			s.Total, s.Up, s.Physical)
 	}
 }
@@ -174,10 +176,96 @@ func TestFreqMHzConvertsHertz(t *testing.T) {
 		{hz: 2_400_000_000, want: "2400"}, // whole: no decimals
 		{hz: 2_361_000_000, want: "2361"},
 		{hz: 800_000_000, want: "800"},
-		{hz: 2_400_500_000, want: "2400.5"}, // fractional: one decimal
+		// cpufreq reports kHz; a tenth of a MHz is false precision, so round to whole MHz.
+		{hz: 4_966_640_000, want: "4967"},
+		{hz: 1_114_960_000, want: "1115"},
 	} {
 		if got := freqMHz(tc.hz); got != tc.want {
 			t.Errorf("freqMHz(%v) = %q, want %q", tc.hz, got, tc.want)
 		}
+	}
+}
+
+func TestMeterToneGradesUtilisation(t *testing.T) {
+	for _, tc := range []struct {
+		pct  any
+		want string
+	}{
+		{pct: 0, want: "ok"},
+		{pct: 74.9, want: "ok"},
+		{pct: 75, want: "warn"},
+		{pct: 89, want: "warn"},
+		{pct: 90.0, want: "crit"},
+		{pct: 100, want: "crit"},
+		// Templates hand over whatever the view holds; an unknown type must not read as critical.
+		{pct: "98", want: "ok"},
+	} {
+		if got := meterTone(tc.pct); got != tc.want {
+			t.Errorf("meterTone(%v) = %q, want %q", tc.pct, got, tc.want)
+		}
+	}
+}
+
+// Throughput shares the unit of the link speed beside it, so the two compare at a glance.
+func TestFormatRateUsesBitsPerSecond(t *testing.T) {
+	for _, tc := range []struct {
+		bytesPerSec float64
+		want        string
+	}{
+		{bytesPerSec: 0, want: "0 bit/s"},
+		{bytesPerSec: 525e3, want: "4.2 Mbit/s"},
+		{bytesPerSec: 312.5e6, want: "2.5 Gbit/s"},
+	} {
+		if got := formatRate(tc.bytesPerSec); got != tc.want {
+			t.Errorf("formatRate(%v) = %q, want %q", tc.bytesPerSec, got, tc.want)
+		}
+	}
+}
+
+func TestLinkUtilisationUsesTheBusierDirection(t *testing.T) {
+	links := netLinksFrom(&snapshot.Node{Links: []snapshot.Link{
+		{Name: "eno1", Up: true, SpeedMbit: 1000, HasRates: true, RxPerSecond: 25e6, TxPerSecond: 62.5e6},
+		{Name: "wg0", Kind: "wireguard", Up: true, HasRates: true, RxPerSecond: 1e6},
+	}})
+	if len(links) != 2 {
+		t.Fatalf("got %d links, want 2", len(links))
+	}
+	// 62.5 MB/s is 500 Mbit/s of a 1 Gbit/s link.
+	if !links[0].HasUtil || links[0].UtilPct != 50 {
+		t.Errorf("eno1 utilisation = %d (has=%v), want 50", links[0].UtilPct, links[0].HasUtil)
+	}
+	// No speed, no denominator: a tunnel has no utilisation to show.
+	if links[1].HasUtil {
+		t.Error("a link without a speed reports utilisation")
+	}
+}
+
+// A GPU publishes its power limit as a cap, not critical or max; reading only those two hid a 300 W limit.
+func TestSensorPowerCapIsALimit(t *testing.T) {
+	groups := sensorsFrom(&snapshot.Node{Sensors: []snapshot.Sensor{
+		{Chip: "/sys/class/hwmon/hwmon3", ChipName: "amdgpu", Sensor: "power1", Kind: "power", Label: "PPT",
+			Value: 15, Limits: map[string]float64{"cap": 300}},
+	}})
+	if len(groups) != 1 || len(groups[0].Rows) != 1 {
+		t.Fatalf("got %+v, want one power reading", groups)
+	}
+	r := groups[0].Rows[0]
+	if !r.HasLimit || r.LimitOf != "cap" || r.Pct != 5 {
+		t.Errorf("power limit = has %v, of %q, %d%%; want the 300 W cap at 5%%", r.HasLimit, r.LimitOf, r.Pct)
+	}
+}
+
+// SMBIOS lists empty slots with size 0; counting them reported 4 DIMMs on a node with 2 installed.
+func TestDIMMCountSkipsEmptySlots(t *testing.T) {
+	const gib = 1 << 30
+	n := &snapshot.Node{Modules: []snapshot.Module{
+		{Slot: "XMM1", SizeBytes: 8 * gib}, {Slot: "XMM2"},
+		{Slot: "XMM3", SizeBytes: 8 * gib}, {Slot: "XMM4"},
+	}}
+	if got := nodeSummaryFrom(n).MemoryDIMMs; got != 2 {
+		t.Errorf("summary DIMMs = %d, want 2", got)
+	}
+	if got := populatedModules(n); got != 2 {
+		t.Errorf("populatedModules = %d, want 2", got)
 	}
 }

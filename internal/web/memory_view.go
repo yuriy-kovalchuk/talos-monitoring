@@ -27,10 +27,9 @@ type memUsage struct {
 	SwapUsed  string
 	SwapTotal string
 
-	Committed        string
-	CommitLimit      string
-	CommitPct        int
-	CommitOvercommit bool
+	Committed   string
+	CommitLimit string
+	CommitPct   int
 }
 
 // memUsageFrom renders the memory bar and swap/commit context.
@@ -70,7 +69,6 @@ func memUsageFrom(n *snapshot.Node) memUsage {
 		m.Committed = humanize.IBytes(committed)
 		m.CommitLimit = humanize.IBytes(limit)
 		m.CommitPct = pctOf(committed, limit)
-		m.CommitOvercommit = committed > limit
 	}
 	return m
 }
@@ -80,13 +78,27 @@ type memoryModule struct {
 	Slot          string
 	SizeMiB       int
 	SizeDisplay   string
-	SpeedMHz      int
+	SpeedMTs      int // rated transfer rate in MT/s; SMBIOS reports MT/s, not the clock
 	Manufacturer  string
 	Product       string
 	SerialNumber  string
 	AssetTag      string
 	DeviceLocator string
 	BankLocator   string
+}
+
+// populatedModules counts installed DIMMs; SMBIOS also lists empty slots, with size 0.
+func populatedModules(n *snapshot.Node) int {
+	if n == nil {
+		return 0
+	}
+	count := 0
+	for _, m := range n.Modules {
+		if m.SizeBytes > 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // memoryModulesFrom renders the DIMM rows and the installed total.
@@ -103,7 +115,7 @@ func memoryModulesFrom(n *snapshot.Node) ([]memoryModule, string) {
 			Slot:          mod.Slot,
 			SizeMiB:       mib,
 			SizeDisplay:   displaySize(mib),
-			SpeedMHz:      int(mod.SpeedTransfer / 1e6),
+			SpeedMTs:      int(mod.SpeedTransfer / 1e6),
 			Manufacturer:  dmiValue(mod.Manufacturer),
 			Product:       dmiValue(mod.Product),
 			SerialNumber:  dmiValue(mod.SerialNumber),

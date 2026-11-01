@@ -314,8 +314,8 @@ func TestStaticAssetsAreCacheableAndSelfHosted(t *testing.T) {
 		"/static/css/style.css",
 		"/static/css/fonts.css",
 		"/static/js/htmx.min.js",
-		"/static/fonts/manrope-latin-var.woff2",
-		"/static/fonts/jetbrains-mono-latin-var.woff2",
+		"/static/fonts/roboto-latin-var.woff2",
+		"/static/fonts/roboto-mono-latin-var.woff2",
 	} {
 		rec, _ := do(t, h, path)
 		if rec.Code != http.StatusOK {
@@ -458,7 +458,7 @@ func TestAssetURLsAreVersioned(t *testing.T) {
 		t.Fatal("empty asset version")
 	}
 	for _, asset := range []string{
-		"/static/js/app.js", "/static/js/htmx.min.js", "/static/css/style.css",
+		"/static/js/theme.js", "/static/js/app.js", "/static/js/htmx.min.js", "/static/css/style.css",
 	} {
 		want := asset + "?v=" + v
 		if !strings.Contains(body, want) {

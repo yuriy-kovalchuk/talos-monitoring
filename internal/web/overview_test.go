@@ -299,7 +299,7 @@ func TestBusiestTileReportsOneNode(t *testing.T) {
 		t.Fatal("no busiest-node tile")
 	}
 	tile := body[i:min(i+400, len(body))]
-	checkBody(t, tile, "55.0%", "node-1", "load 1.25")
+	checkBody(t, tile, ">55.0<", "node-1", "load 1.25")
 	// The fleet-maximum load of some other node must not appear here.
 	if strings.Contains(tile, " on node-") {
 		t.Error("the tile still names a second node")
