@@ -132,14 +132,25 @@ documented in `charts/talos-monitoring/values.yaml` and validated by
 ### Locally
 
 ```sh
-make build
-KUBECONFIG=~/.kube/config TALOSCONFIG=~/.talos/config \
-  ./bin/talos-monitoring serve --listen :8080
+make run                                         # default talosconfig and kubeconfig
+make run TALOSCONFIG=~/.talos/config-admin       # another talosconfig, e.g. an os:admin one
+make run KUBECONFIG=~/.kube/other LISTEN=:9090   # another cluster or port
 ```
 
 Outside Kubernetes the monitor picks up the usual config paths automatically
-(`$KUBECONFIG`/`~/.kube/config`, `$TALOSCONFIG`/`~/.talos/config`). Run
-`./bin/talos-monitoring serve --help` for the full flag list.
+(`$KUBECONFIG`/`~/.kube/config`, `$TALOSCONFIG`/`~/.talos/config`); the `make run`
+variables override them for that run. Run `./bin/talos-monitoring serve --help` for
+the full flag list.
+
+### Releasing
+
+1. Set `version` and `appVersion` in `charts/talos-monitoring/Chart.yaml` to the new
+   version, without the `v` (`0.2.0`).
+2. Rename the `[Unreleased]` section of `CHANGELOG.md` to that version and today's date.
+3. Commit, then push the tag `vX.Y.Z`. CD runs the CI checks, refuses a tag that does not
+   match `Chart.yaml` or has no changelog section, and publishes the signed image
+   (`:X.Y.Z`, `:vX.Y.Z`, `:latest`), the chart and a GitHub Release with that section
+   as its notes.
 
 ## Metrics
 

@@ -7,13 +7,14 @@ on:
   # cd.yml calls this before releasing, so a tag on a red commit never ships.
   workflow_call:
 
-# Read-only by default; the publish job asks for packages:write itself.
+# Read-only by default; the publish job asks for packages:write and id-token:write itself.
 permissions:
   contents: read
 
+# Superseded PR runs are cancelled; a main run always finishes, so every commit gets its :main-<sha> image.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # CI runs checks on every push/PR. On a green push to main it additionally
 # publishes the :main image (job below); releases — tagged image + helm chart
@@ -23,11 +24,18 @@ env:
   # Target of the publish job (main pushes only). GHCR auth uses the
   # workflow's own GITHUB_TOKEN — no repo secrets to configure.
   REGISTRY: ghcr.io
+  # Downloaded tools are pinned by version and sha256 (from each release's published checksums).
+  GOLANGCI_LINT_VERSION: "2.15.0"
+  GOLANGCI_LINT_SHA256: 9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea
+  HELM_VERSION: v4.3.1
+  HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+  GOVULNCHECK_VERSION: v1.9.0
 
 jobs:
   checks:
     name: Code checks + helm lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,28 +60,29 @@ jobs:
         # it was built with: v2.11.4 (go1.26.1) rejects a go1.27 module outright. v2.14.0
         # is built with go1.27.0, v2.15.0 with go1.27.2 (a newer patch is accepted).
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.15.0/install.sh \
-            | sh -s -- -b "$(go env GOPATH)/bin" v2.15.0
+          f="golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64"
+          curl -fsSLo "$RUNNER_TEMP/$f.tar.gz" \
+            "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/$f.tar.gz"
+          echo "${GOLANGCI_LINT_SHA256}  $RUNNER_TEMP/$f.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f.tar.gz" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/$f/golangci-lint" /usr/local/bin/golangci-lint
           golangci-lint version
 
-      - name: Format check
-        run: |
-          unformatted=$(gofmt -s -l .)
-          if [ -n "$unformatted" ]; then
-            echo "::error::gofmt -s needed for: $unformatted"
-            exit 1
-          fi
+      # golangci-lint runs govet and gofmt -s too, so no separate vet or format step.
+      - name: Build, test, lint
+        run: make build test lint
 
-      - name: Vet, build, test, lint
-        run: make vet build test lint
-
+      # A pinned version: @latest would change the result from run to run; go run verifies it against the checksum database.
       - name: Vulnerability scan
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
 
       - name: Install helm
         run: |
-          curl -fsSL "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz" | tar xz
-          sudo mv linux-amd64/helm /usr/local/bin/helm
+          f="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$f" "https://get.helm.sh/$f"
+          echo "${HELM_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
           helm version --short
 
       - name: Helm lint
@@ -82,14 +91,65 @@ jobs:
       - name: Helm template render (default values)
         run: make helm-template
 
+  # A PR proves the Dockerfile still builds for both platforms and the image passes the scan; nothing is published.
+  image:
+    name: Build and scan image (no publish)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build amd64 for the scan
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: talos-monitoring:scan
+          build-args: |
+            VERSION=pr-${{ github.event.pull_request.number }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Fail on fixable CRITICAL/HIGH image vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: talos-monitoring:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      # cacheonly builds every stage for both platforms and exports nothing; the amd64 layers come from the step above.
+      - name: Build both platforms (no export)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          outputs: type=cacheonly
+          build-args: |
+            VERSION=pr-${{ github.event.pull_request.number }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   publish:
     name: Publish :main image
     needs: checks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+      id-token: write # keyless cosign signing: the signature names this workflow, no key to store
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,28 +166,74 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute version and tags
-        id: version
-        run: |
-          image="${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
-          {
-            echo "VERSION=$(git describe --tags --match 'v[0-9]*' 2>/dev/null || echo main)"
-            echo "COMMIT=$(git rev-parse --short HEAD)"
-            echo "BUILDDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo 'TAGS<<EOF'
-            echo "${image}:main"
-            echo "${image}:main-${GITHUB_SHA}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+      # Tags plus the OCI labels; org.opencontainers.image.source is what links the GHCR package to this repo.
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=main
+            type=sha,format=long,prefix=main-
 
-      - name: Build and push image (linux/amd64)
+      # The binary's own version string: git describe, which metadata-action does not produce.
+      - name: Build version
+        id: build
+        run: |
+          echo "version=$(git describe --tags --match 'v[0-9]*' 2>/dev/null || echo main)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build amd64 for the scan
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64
-          push: true
+          load: true
+          tags: talos-monitoring:scan
           build-args: |
-            VERSION=${{ steps.version.outputs.VERSION }}
-            COMMIT=${{ steps.version.outputs.COMMIT }}
-            BUILDDATE=${{ steps.version.outputs.BUILDDATE }}
-          tags: ${{ steps.version.outputs.TAGS }}
+            VERSION=${{ steps.build.outputs.version }}
+            COMMIT=${{ steps.build.outputs.commit }}
+            BUILDDATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Before the push: an image with a fixable CRITICAL/HIGH never reaches the registry.
+      - name: Fail on fixable CRITICAL/HIGH image vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: talos-monitoring:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Build and push image (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            VERSION=${{ steps.build.outputs.version }}
+            COMMIT=${{ steps.build.outputs.commit }}
+            BUILDDATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Signed by digest, so every tag of this build verifies against the same signature.
+      - name: Sign image
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          image="${REGISTRY}/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          cosign sign --yes "${image}@${DIGEST}"

@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
-MSG=$(cat "$1")
-PATTERN='^(feat|fix|refactor|test|docs|build|ci|chore|perf|style)(!)?:\ .+'
+# Commit-message check: one pattern, shared with .githooks/pre-push. Install with `make install-hooks`.
 
-if ! echo "$MSG" | grep -qE "$PATTERN"; then
+MSG=$(head -n 1 "$1")
+PATTERN='^(feat|fix|refactor|test|docs|build|ci|chore|perf|style)(!)?: .+'
+# Subjects git writes for itself; the author cannot choose their format.
+GENERATED='^Merge |^Revert "'
+MAX_LEN=72
+
+if ! printf '%s' "$MSG" | grep -qE "$PATTERN" && ! printf '%s' "$MSG" | grep -qE "$GENERATED"; then
   echo ""
   echo "  Invalid commit message: \"$MSG\""
-  echo "  Expected: type: description"
+  echo "  Expected: type: description        (no scopes)"
   echo "  Types: feat fix refactor test docs build ci chore perf style"
   echo "  Breaking: feat!: description"
+  echo ""
+  exit 1
+fi
+
+if ! printf '%s' "$MSG" | grep -qE "$GENERATED" && [ "${#MSG}" -gt "$MAX_LEN" ]; then
+  echo ""
+  echo "  Commit subject is ${#MSG} characters, limit is $MAX_LEN:"
+  echo "    $MSG"
+  echo "  Move the detail into the body."
   echo ""
   exit 1
 fi

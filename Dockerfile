@@ -1,4 +1,7 @@
-FROM golang:1.27.3 AS build
+# The builder runs on the build host and cross-compiles, so an arm64 image needs no emulation.
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
+ARG TARGETOS=linux
+ARG TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILDDATE=unknown
@@ -7,7 +10,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${LDFLAGS}" -o /out/talos-monitoring ./cmd/talos-monitoring
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="${LDFLAGS}" -o /out/talos-monitoring ./cmd/talos-monitoring
 
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/talos-monitoring /talos-monitoring

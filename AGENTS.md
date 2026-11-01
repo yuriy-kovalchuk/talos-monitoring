@@ -89,7 +89,11 @@ exposition format back, and neither `/metrics` nor a page render ever triggers a
   client_golang v1.25.x and htmx v2.0.11 (vendored). No charting library.
 - Reference cluster: `KUBECONFIG=~/.kube/workload`, 5 nodes, Talos v1.14.4. Verify live —
   several bugs here were only caught by running against it, not by tests.
-- Commits: `type: description`, no scopes. Enforced by `.githooks/commit-msg`.
+- Commits: `type: description`, no scopes, subject ≤ 72 characters. Enforced by
+  `.githooks/` once `make install-hooks` is run (`commit-msg`, and `pre-push` for `main`,
+  `v*` tags and the race suite).
+- User-visible changes get an entry under `[Unreleased]` in `CHANGELOG.md` (Keep a
+  Changelog); a metric or label change is user-visible.
 - `make all` = fmt vet build test lint; `make test` runs `-race`.
 - Tests assert behaviour, never UI copy. **When a test fails after a deliberate change,
   check whether it was pinning the bug** — several were.
