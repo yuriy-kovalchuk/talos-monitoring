@@ -1,0 +1,48 @@
+#!/bin/sh
+# Pre-push: re-checks every subject pushed to main, validates v* tags (cd.yml releases them), runs the race suite.
+# The patterns match .githooks/commit-msg; install with `make install-hooks`.
+
+set -e
+
+CONVENTIONAL_RE='^(feat|fix|refactor|test|docs|build|ci|chore|perf|style)(!)?: .+'
+GENERATED_RE='^Merge |^Revert "'
+TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+ZERO='0000000000000000000000000000000000000000'
+
+check_commits() {
+  git log --format='%s' "$1" | while IFS= read -r msg; do
+    [ -z "$msg" ] && continue
+    if ! printf '%s' "$msg" | grep -qE "$CONVENTIONAL_RE" &&
+       ! printf '%s' "$msg" | grep -qE "$GENERATED_RE"; then
+      printf 'ERROR: non-conventional commit message:\n  %s\n' "$msg" >&2
+      printf 'Format: type: description   (no scopes)\n' >&2
+      printf 'Types:  feat|fix|refactor|test|docs|build|ci|chore|perf|style\n' >&2
+      exit 1
+    fi
+  done
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue # deleting a ref
+  case "$local_ref" in
+    refs/tags/*)
+      tag="${local_ref#refs/tags/}"
+      if ! printf '%s' "$tag" | grep -qE "$TAG_RE"; then
+        printf 'ERROR: invalid tag "%s"; expected v<major>.<minor>.<patch>[-prerelease]\n' "$tag" >&2
+        exit 1
+      fi
+      ;;
+    refs/heads/main)
+      if [ "$remote_sha" = "$ZERO" ]; then
+        range="$local_sha"
+      else
+        range="$remote_sha..$local_sha"
+      fi
+      check_commits "$range"
+      ;;
+  esac
+done
+
+printf '==> running tests...\n'
+go test -race -timeout 300s ./...
+printf '==> pre-push checks passed\n'

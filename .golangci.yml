@@ -10,3 +10,11 @@ linters:
     # modernize: builtin forms over hand-written ones (max, WaitGroup.Go,
     # maps.Copy, range over int, strings.SplitSeq)
     - modernize
+
+# Formatting is a lint finding too, so CI needs no separate gofmt step; `make fmt` still rewrites locally.
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true

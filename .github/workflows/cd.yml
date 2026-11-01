@@ -4,9 +4,10 @@ on:
   push:
     tags: ["v*"]
 
+# A release always runs to completion: cancelling it midway could leave the image pushed without its chart or release.
 concurrency:
   group: cd-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   # Artifact registry: GHCR serves both the docker image and the helm chart
@@ -15,27 +16,60 @@ env:
   # publish as private by default on first push; make them public under the
   # repo's Packages settings once you're ready for others to pull.
   REGISTRY: ghcr.io
+  # Same pin as ci.yml: version plus the sha256 from the release's checksum file.
+  HELM_VERSION: v4.3.1
+  HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
 
 jobs:
   # The same checks as CI: a tag pushed on a commit that failed them must not publish.
   checks:
     uses: ./.github/workflows/ci.yml
+    # A called workflow gets at most these; ci.yml's :main publish job declares the last two and is skipped on tags.
     permissions:
       contents: read
-      packages: write # granted because ci.yml's :main publish job declares it; it is skipped on tags
+      packages: write
+      id-token: write
 
   publish:
     name: Publish image + helm chart
     needs: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       packages: write
+      id-token: write # keyless cosign signing: the signature names this workflow, no key to store
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0 # tags are needed for version stamping
+
+      # First, before anything is published: Chart.yaml must already carry this release, and CHANGELOG.md must have
+      # its section, which becomes the release notes. A forgotten release-prep commit fails here, not halfway.
+      - name: Verify the release-prep commit
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag $GITHUB_REF_NAME is not semver (expected e.g. v0.2.0)"
+            exit 1
+          fi
+          chart=charts/talos-monitoring/Chart.yaml
+          chart_version=$(awk '/^version:/ {print $2}' "$chart" | tr -d '"')
+          app_version=$(awk '/^appVersion:/ {print $2}' "$chart" | tr -d '"')
+          if [ "$chart_version" != "$ver" ] || [ "$app_version" != "$ver" ]; then
+            echo "::error::$chart is out of sync with tag $GITHUB_REF_NAME: version=$chart_version appVersion=$app_version, want $ver. Bump both in the release-prep commit (README 'Releasing')."
+            exit 1
+          fi
+          awk -v ver="$ver" '
+            index($0, "## [" ver "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            echo "::error::CHANGELOG.md has no '## [$ver]' section; move the [Unreleased] entries under it before tagging"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/notes.md"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -47,58 +81,87 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute version and tags
-        id: version
-        run: |
-          image="${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
-          {
-            echo "IMAGE=${image}"
-            echo "VERSION=${GITHUB_REF_NAME}"
-            echo "COMMIT=$(git rev-parse --short HEAD)"
-            echo "BUILDDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo 'TAGS<<EOF'
-            echo "${image}:latest"
-            echo "${image}:${GITHUB_REF_NAME}"
-            echo "${image}:${GITHUB_SHA}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+      # :X.Y.Z is what the chart's appVersion points at; :vX.Y.Z is kept for anyone pulling the v-prefixed tags of earlier releases.
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=tag
+            type=raw,value=latest
+            type=sha,format=long,prefix=
 
-      - name: Build and push image (linux/amd64)
+      - name: Build amd64 for the scan
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64
-          push: true
+          load: true
+          tags: talos-monitoring:scan
           build-args: |
-            VERSION=${{ steps.version.outputs.VERSION }}
-            COMMIT=${{ steps.version.outputs.COMMIT }}
-            BUILDDATE=${{ steps.version.outputs.BUILDDATE }}
-          tags: ${{ steps.version.outputs.TAGS }}
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+            BUILDDATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Before the push: a release with a fixable CRITICAL/HIGH never reaches the registry.
+      - name: Fail on fixable CRITICAL/HIGH image vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: talos-monitoring:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Build and push image (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+            BUILDDATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Signed by digest, so every tag of the release verifies against the same signature.
+      - name: Sign image
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          image="${REGISTRY}/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          cosign sign --yes "${image}@${DIGEST}"
 
       # The chart is a release artifact: chart versions must be unique semver (there is
-      # no "latest"), so the chart publishes only on tag pushes, and the tag is
-      # the version. The stamp rewrites a working copy of Chart.yaml (version +
-      # appVersion); the templates pin the image tag to appVersion
-      # (templates/_helpers.tpl), so appVersion keeps the tag's v prefix and
-      # references the :${GITHUB_REF_NAME} image the same run pushed.
+      # no "latest"), so the chart publishes only on tag pushes. It ships exactly as
+      # Chart.yaml declares, which the first step checked against the tag; its
+      # appVersion is the :X.Y.Z image this run pushed.
       - name: Install helm
         run: |
-          curl -fsSL "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz" | tar xz
-          sudo mv linux-amd64/helm /usr/local/bin/helm
+          f="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$f" "https://get.helm.sh/$f"
+          echo "${HELM_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
           helm version --short
 
-      - name: Stamp chart version from tag
-        run: |
-          ver="${GITHUB_REF_NAME#v}"
-          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::tag $GITHUB_REF_NAME is not semver (expected e.g. v0.2.0)"
-            exit 1
-          fi
-          sed -i "s/^version:.*/version: ${ver}/" charts/talos-monitoring/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${GITHUB_REF_NAME}\"/" charts/talos-monitoring/Chart.yaml
-          grep -E '^(version|appVersion):' charts/talos-monitoring/Chart.yaml
-
-      - name: Helm lint (stamped chart)
+      - name: Helm lint
         run: make helm-lint
 
       - name: Package helm chart
@@ -111,7 +174,7 @@ jobs:
         # wrote, so no separate credentials are needed here.
         run: |
           version=$(awk '/^version:/{print $2}' charts/talos-monitoring/Chart.yaml)
-          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
           helm push "dist/talos-monitoring-${version}.tgz" "oci://${REGISTRY}/${owner}/charts"
           echo "Pushed talos-monitoring-${version}.tgz"
 
@@ -126,5 +189,5 @@ jobs:
           version=$(awk '/^version:/{print $2}' charts/talos-monitoring/Chart.yaml)
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes \
+            --notes-file "$RUNNER_TEMP/notes.md" \
             "dist/talos-monitoring-${version}.tgz"

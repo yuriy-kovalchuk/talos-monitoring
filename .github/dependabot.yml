@@ -1,0 +1,36 @@
+# Weekly grouped bumps for Go modules, Actions (SHA-pinned) and Docker images; prefixes match the commit-msg hook.
+# A golang image bump also needs go.mod's go directive and go-version in ci.yml moved by hand.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+    groups:
+      kubernetes:
+        patterns: ["k8s.io/*", "sigs.k8s.io/*"]
+      go-modules:
+        patterns: ["*"]
+    ignore:
+      # Newer revisions move to structured-merge-diff/v7, which apimachinery cannot build against;
+      # a k8s.io bump raises it to the revision it requires anyway.
+      - dependency-name: k8s.io/kube-openapi
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
