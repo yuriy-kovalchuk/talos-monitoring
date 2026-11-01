@@ -20,7 +20,7 @@
   <a class="brand" href="/">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(2 128 125)" stroke-width="2" aria-hidden="true"><path d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>
     <span>talos-monitoring</span>
-    <span class="version-chip">v{{.Version}}</span>
+    <span class="version-chip">{{.Version}}</span>
   </a>
   <div class="topbar-right">
     {{/* The node switcher lives in the header so it is reachable from every
@@ -76,7 +76,7 @@
   </nav>
   <main class="content">
     {{.Inner}}
-    <footer class="foot">talos-monitoring v{{.Version}} · commit {{.Commit}} · built {{.BuildDate}}</footer>
+    <footer class="foot">talos-monitoring {{.Version}} · commit {{.Commit}} · built {{.BuildDate}}</footer>
   </main>
 </div>
 </body>

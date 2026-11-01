@@ -132,6 +132,7 @@
         "block",
         "cpu",
         "diskio",
+        "etcd",
         "gpu",
         "health",
         "identity",
@@ -175,6 +176,9 @@
           }
         },
         "diskio": {
+          "$ref": "#/definitions/enabledOnly"
+        },
+        "etcd": {
           "$ref": "#/definitions/enabledOnly"
         },
         "gpu": {

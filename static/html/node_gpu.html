@@ -18,9 +18,17 @@
 {{range .GPUs}}
 <div class="card">
   <div class="card-head">
-    <span class="eyebrow"><span class="live-dot"></span>{{.Card}}</span>
-    <span class="card-sub mono">{{.Driver}} · {{.PCI}}{{if .PCIID}} · {{.PCIID}}{{end}}</span>
+    <span class="eyebrow"><span class="live-dot"></span>{{fallback .Model (fallback .Card .PCI)}}</span>
+    <span class="card-sub mono">{{if .Card}}{{.Card}} · {{end}}{{fallback .Driver "no driver bound"}} · {{.PCI}}{{if .PCIID}} · {{.PCIID}}{{end}}</span>
   </div>
+  {{if not .Card}}
+  <div class="empty">{{if .Driver}}The {{.Driver}} driver exposes no DRM card for this device{{else}}No
+  driver is bound to this device{{end}}, so there are no utilisation or memory counters to read.</div>
+  {{else if .Denied}}
+  <div class="empty">Utilisation and video memory are sysfs files, and reading them needs the
+  <code>os:admin</code> role (Helm value <code>talos.roles</code>). The read is retried every
+  few minutes, so granting the role needs no restart.</div>
+  {{else}}
   <div style="overflow-x:auto">
   <table class="table-fleet">
     <tbody>
@@ -30,7 +38,7 @@
           {{if .HasBusy}}
           <span class="cell-bar"><span style="width:{{.BusyPct}}%"></span></span>
           {{.BusyPct}}%{{if .Suspended}}<div class="cell-sub">asleep</div>{{end}}
-          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{.Driver}}</span>{{end}}
+          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{fallback .Driver "the driver"}}</span>{{end}}
         </td>
       </tr>
       <tr>
@@ -39,7 +47,7 @@
           {{if .HasVRAM}}
           <span class="cell-bar"><span style="width:{{.VRAMPct}}%"></span></span>
           {{.VRAMUsed}} of {{.VRAMTotal}} ({{.VRAMPct}}%)
-          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{.Driver}}</span>{{end}}
+          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{fallback .Driver "the driver"}}</span>{{end}}
         </td>
       </tr>
       <tr>
@@ -49,6 +57,7 @@
     </tbody>
   </table>
   </div>
+  {{end}}
 </div>
 {{end}}
 
@@ -84,12 +93,9 @@
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">GPU</span></div>
-  <div class="empty">No GPU with a driver bound on this node. A card with no kernel
-  driver (no matching system extension in the image) has no
-  <code>/sys/class/drm</code> entry and cannot report utilisation — check the
-  <a class="crumb" href="/nodes/{{.Node.Name}}/pci">PCI page</a> for whether the hardware
-  is present at all. The <code>gpu</code> collector also needs the <code>os:admin</code>
-  role for file reads.</div>
+  <div class="empty">No GPU on this node: the PCI inventory lists no display controller.
+  The full device list is on the
+  <a class="crumb" href="/nodes/{{.Node.Name}}/pci">PCI page</a>.</div>
 </div>
 {{end}}
 </div>

@@ -51,7 +51,7 @@ func TestEveryStatefulCollectorPrunes(t *testing.T) {
 		cpu.New(discardLog(), hist, 0, false).WithSnapshot(snap).WithSysStat(stats),
 		sensors.New(discardLog()).WithSnapshot(snap),
 		block.New().WithSnapshot(snap),
-		network.New(discardLog()).WithSnapshot(snap),
+		network.New().WithSnapshot(snap),
 		hwinfo.NewMemory().WithSnapshot(snap),
 	}
 	for _, c := range stateful {
@@ -70,7 +70,7 @@ func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard,
 
 // testCollectorNames are the registered collector names, sorted.
 var testCollectorNames = []string{
-	"block", "cpu", "diskio", "gpu", "health", "identity", "kernel", "memory",
+	"block", "cpu", "diskio", "etcd", "gpu", "health", "identity", "kernel", "memory",
 	"network", "nodeapi", "pci", "processor", "sensors", "system", "time", "volumes",
 }
 

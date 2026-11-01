@@ -130,7 +130,7 @@
   {{if .FreqObserved.Available}}
   <div class="card-foot">Scraping is itself load and cpufreq governors react in
   microseconds, so a single reading runs high — the range over the window is the honest
-  figure. See <code>talos_cpu_core_freq_hertz</code> for the raw per-core values.</div>
+  figure. See <code>talos_node_cpu_freq_hertz</code> for the raw per-core values.</div>
   {{end}}
   {{else}}
   <div class="empty">No frequency data yet. The <code>cpu</code> collector is disabled, or

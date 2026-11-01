@@ -744,7 +744,7 @@ func TestPCIDegradesWithoutFileAccess(t *testing.T) {
 	if !found {
 		t.Error("PCI inventory lost when file reads were denied")
 	}
-	if !c.gate.Off() {
+	if !c.gate.Denied() {
 		t.Error("expected the sysfs enrichment to disable itself after a permission error")
 	}
 

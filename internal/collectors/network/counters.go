@@ -2,18 +2,16 @@ package network
 
 import (
 	"context"
-	"io"
-	"strconv"
-	"strings"
+	"fmt"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/siderolabs/talos/pkg/machinery/api/machine"
+	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collector"
 )
-
-// procNetDev holds every interface's counters, so throughput costs one read per scrape.
-const procNetDev = "/proc/net/dev"
 
 // ifCounters is one interface's cumulative counters.
 type ifCounters struct {
@@ -27,8 +25,6 @@ type counterSample struct {
 	byIf map[string]ifCounters
 }
 
-// registerCounters exports the /proc/net/dev counters and derives rates for the dashboard's live graph.
-
 // linkStats is one interface's counters plus derived throughput; HasRate is false on the first scrape.
 type linkStats struct {
 	ifCounters
@@ -37,21 +33,15 @@ type linkStats struct {
 	TxRate  float64
 }
 
-// registerCounters returns nil when the counters were unavailable (permission denied, or no match).
-func (c *Collector) registerCounters(ctx context.Context, api fileAPI, nodeName string, kept map[string]bool, reg prometheus.Registerer) map[string]linkStats {
-	if c.countersGate.Off() {
-		return nil
-	}
-	raw, err := collector.ReadFile(ctx, api, procNetDev)
+// registerCounters exports the NetworkDeviceStats counters (os:reader-safe) and derives rates for the live graph.
+func (c *Collector) registerCounters(ctx context.Context, api statsAPI, nodeName string, kept map[string]bool, reg prometheus.Registerer) (map[string]linkStats, error) {
+	resp, err := api.NetworkDeviceStats(ctx)
 	if err != nil {
-		if collector.IsPermissionError(err) {
-			c.countersGate.Trip(nodeName, err)
-		}
-		return nil
+		return nil, fmt.Errorf("network device stats: %w", err)
 	}
-	current := parseProcNetDev(raw, kept)
+	current := fromDeviceStats(resp, kept)
 	if len(current) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	rxBytes := counterVec("talos_net_link_rx_bytes_total", "Bytes received on the interface since boot.")
@@ -117,7 +107,7 @@ func (c *Collector) registerCounters(ctx context.Context, api fileAPI, nodeName 
 		}
 		stats[name] = st
 	}
-	return stats
+	return stats, nil
 }
 
 func perSecond(cur, old uint64, secs float64) (float64, bool) {
@@ -136,42 +126,37 @@ func (c *Collector) takePrev(node string, cur map[string]ifCounters, now time.Ti
 	return prev, ok
 }
 
-// parseProcNetDev parses "iface: rx... tx..." lines, keeping only named interfaces.
-func parseProcNetDev(raw string, kept map[string]bool) map[string]ifCounters {
+// fromDeviceStats keeps the counters of the reported interfaces; the CNI's veths are dropped here.
+func fromDeviceStats(resp *machine.NetworkDeviceStatsResponse, kept map[string]bool) map[string]ifCounters {
 	out := map[string]ifCounters{}
-	for line := range strings.SplitSeq(raw, "\n") {
-		name, rest, ok := strings.Cut(line, ":")
-		if !ok {
-			continue // the two header lines
-		}
-		name = strings.TrimSpace(name)
-		if !kept[name] {
-			continue
-		}
-		f := strings.Fields(rest)
-		if len(f) < 16 {
-			continue
-		}
-		out[name] = ifCounters{
-			rxBytes: u(f[0]), rxPackets: u(f[1]), rxErrors: u(f[2]), rxDropped: u(f[3]),
-			txBytes: u(f[8]), txPackets: u(f[9]), txErrors: u(f[10]), txDropped: u(f[11]),
+	for _, m := range resp.GetMessages() {
+		for _, d := range m.GetDevices() {
+			if !kept[d.GetName()] {
+				continue
+			}
+			out[d.GetName()] = ifCounters{
+				rxBytes: d.GetRxBytes(), rxPackets: d.GetRxPackets(), rxErrors: d.GetRxErrors(), rxDropped: d.GetRxDropped(),
+				txBytes: d.GetTxBytes(), txPackets: d.GetTxPackets(), txErrors: d.GetTxErrors(), txDropped: d.GetTxDropped(),
+			}
 		}
 	}
 	return out
-}
-
-func u(s string) uint64 {
-	v, _ := strconv.ParseUint(s, 10, 64)
-	return v
 }
 
 func counterVec(name, help string) *prometheus.CounterVec {
 	return prometheus.NewCounterVec(prometheus.CounterOpts{Name: name, Help: help}, []string{"node", "link"})
 }
 
-// fileAPI is the part of the Talos client used to read /proc (test seam).
-type fileAPI interface {
-	Read(ctx context.Context, path string) (io.ReadCloser, error)
+// statsAPI is the part of the Talos client the counters use (test seam).
+type statsAPI interface {
+	NetworkDeviceStats(ctx context.Context) (*machine.NetworkDeviceStatsResponse, error)
+}
+
+// talosStats adapts the Talos client, which has no NetworkDeviceStats wrapper of its own.
+type talosStats struct{ client *talosclient.Client }
+
+func (t talosStats) NetworkDeviceStats(ctx context.Context) (*machine.NetworkDeviceStatsResponse, error) {
+	return t.client.MachineClient.NetworkDeviceStats(ctx, &emptypb.Empty{})
 }
 
 // Prune implements collector.Pruner: drop counter samples for departed nodes.
@@ -187,12 +172,4 @@ func (c *Collector) Prune(live map[string]struct{}) {
 			delete(c.prev, node)
 		}
 	}
-}
-
-// Degraded flags the counters off, not Stopped: link state and addresses still come from COSI.
-func (c *Collector) Degraded(string) []collector.Degradation {
-	if c.countersGate.Off() {
-		return []collector.Degradation{{Reason: collector.ReasonPermission}}
-	}
-	return nil
 }

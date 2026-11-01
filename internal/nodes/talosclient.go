@@ -23,14 +23,24 @@ const (
 	talosVerifyConcurrency = 8
 	// talosConfigRetry is the wait between talosconfig load attempts.
 	talosConfigRetry = 10 * time.Second
+	// clientRetireGrace keeps a replaced client open for collections still using it; it is above the node timeout.
+	clientRetireGrace = 30 * time.Second
 )
+
+// retiredClient is a replaced client, closed once in-flight collections have had time to finish.
+type retiredClient struct {
+	c       *talosclient.Client
+	closeAt time.Time
+}
 
 // TalosClientPool keeps one machinery client per node IP and verifies each node's Talos API.
 type TalosClientPool struct {
 	log       *slog.Logger
 	listNodes func() []Node
+	now       func() time.Time
 
 	mu         sync.Mutex
+	retired    []retiredClient // replaced on cert rotation or node removal, closed after clientRetireGrace
 	cfg        *TalosConfig
 	clients    map[string]*talosclient.Client // keyed by node IP
 	verified   map[string]bool                // keyed by node name
@@ -43,6 +53,7 @@ func NewTalosClientPool(log *slog.Logger, listNodes func() []Node) *TalosClientP
 	return &TalosClientPool{
 		log:        log,
 		listNodes:  listNodes,
+		now:        time.Now,
 		clients:    make(map[string]*talosclient.Client),
 		verified:   make(map[string]bool),
 		versions:   make(map[string]string),
@@ -129,12 +140,14 @@ func (p *TalosClientPool) reconcile(ctx context.Context) {
 	current := p.listNodes()
 
 	p.mu.Lock()
+	p.closeRetiredLocked(p.now())
 
 	// A changed file is how the SA controller's 6 h client-cert rotation is picked up.
 	rebuilt := false
 	if freshErr == nil && p.cfg != nil && fresh.Fingerprint != p.cfg.Fingerprint {
 		p.cfg = &fresh
-		p.closeAllLocked()
+		// Retired, not closed: a collection holding the old client would fail with "connection is closing".
+		p.retireAllLocked()
 		p.verified = make(map[string]bool)
 		p.versions = make(map[string]string)
 		rebuilt = true
@@ -149,7 +162,7 @@ func (p *TalosClientPool) reconcile(ctx context.Context) {
 	}
 	for ip, c := range p.clients {
 		if !liveIPs[ip] {
-			_ = c.Close()
+			p.retireLocked(c)
 			delete(p.clients, ip)
 		}
 	}
@@ -250,10 +263,39 @@ func (p *TalosClientPool) setConfig(cfg *TalosConfig) {
 	p.closeAllLocked()
 }
 
+// closeAll is the shutdown path: nothing is in flight any more, so retired clients close too.
 func (p *TalosClientPool) closeAll() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.closeAllLocked()
+	for _, r := range p.retired {
+		_ = r.c.Close()
+	}
+	p.retired = nil
+}
+
+func (p *TalosClientPool) retireLocked(c *talosclient.Client) {
+	p.retired = append(p.retired, retiredClient{c: c, closeAt: p.now().Add(clientRetireGrace)})
+}
+
+func (p *TalosClientPool) retireAllLocked() {
+	for ip, c := range p.clients {
+		p.retireLocked(c)
+		delete(p.clients, ip)
+	}
+}
+
+// closeRetiredLocked closes the retired clients whose grace period ended by now.
+func (p *TalosClientPool) closeRetiredLocked(now time.Time) {
+	kept := p.retired[:0]
+	for _, r := range p.retired {
+		if now.Before(r.closeAt) {
+			kept = append(kept, r)
+			continue
+		}
+		_ = r.c.Close()
+	}
+	p.retired = kept
 }
 
 func (p *TalosClientPool) closeAllLocked() {

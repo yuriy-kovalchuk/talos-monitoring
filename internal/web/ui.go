@@ -45,6 +45,7 @@ type nodeDetail struct {
 	Health         healthView      // health page: services, stage, diagnostics
 	Identity       identityView    // identity page: image, extensions, security
 	TimeSync       timeSyncView    // health page: clock discipline
+	Etcd           *etcdView       // health page: etcd member, control planes only
 	Kernel         kernelView      // identity page: tunables and modules
 	VolumeLayer    volumeLayerView // disks page: Talos volume layer
 	GPUs           []gpuView       // gpu page
@@ -393,6 +394,7 @@ func countDisksByAttachment(page *pageData) {
 func fillHealthIdentityKernel(page *pageData, snap *snapshot.Node, want nodeData) {
 	if want.health {
 		page.Health = healthFrom(snap)
+		page.Etcd = etcdFrom(snap)
 	}
 	if want.identity {
 		page.Identity = identityFrom(snap)

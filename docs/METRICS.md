@@ -1,6 +1,6 @@
 # Metrics reference
 
-Every metric `talos-monitoring` exports — **181 families**, 4 311 series on the reference
+Every metric `talos-monitoring` exports — **193 families**, 4 311 series on the reference
 cluster (4 nodes, 40 threads, 105 PCI devices, 47 disks, 45 block devices, 40 sensors,
 46 services, 18 extension entries, 124 kernel params, 72 modules, 88 volumes, 3 GPUs,
 `--collectors.cpu.mode-seconds` on).
@@ -134,6 +134,41 @@ show, "healthy" and "the collector never ran" would look the same.
 | `talos_diagnostics` | — | **0** |
 | `talos_diagnostic_info` | `id`, `message` | `id=address-overlap` → **1** (absent when none) |
 
+### etcd
+
+Control-plane nodes only, read through the Talos API (`EtcdStatus`, `EtcdMemberList`,
+`EtcdAlarmList`), so `os:reader` is enough and no etcd metrics listener has to be opened.
+Workers run no etcd and are never queried: the collector is not scheduled on a node
+without the `control-plane` role, so a worker carries none of these series and no error
+counters for them. Every family is per member, so cardinality is the control-plane count.
+
+- `talos_etcd_has_leader == 0` means this member sees no leader: no quorum from its view.
+- `sum(talos_etcd_is_leader)` should be exactly 1; a fast-rising `talos_etcd_raft_term`
+  means leadership keeps changing.
+- `talos_etcd_raft_index - talos_etcd_raft_applied_index` growing means the member is
+  falling behind on applying the log.
+- `talos_etcd_db_size_bytes - talos_etcd_db_size_in_use_bytes` is free space a
+  `talosctl etcd defrag` would return. etcd refuses writes once the file reaches its quota
+  (2 GiB by default) and raises `NOSPACE`.
+- `talos_etcd_alarm` exports both alarm types as 0/1 on every member, so an alert does
+  not arm on absent data. The alarm list is cluster-wide; each member reports only its
+  own, so a sum across nodes counts each alarm once.
+
+| Metric | Labels | Example |
+|---|---|---|
+| `talos_etcd_member_info` | `member_id`, `protocol_version`, `storage_version` | `member_id=8ecba9ca968d7a0a, protocol_version=3.7.2, storage_version=3.7.0` → **1** |
+| `talos_etcd_db_size_bytes` | — | **6.4e+08** |
+| `talos_etcd_db_size_in_use_bytes` | — | **1.08e+08** |
+| `talos_etcd_has_leader` | — | **1** |
+| `talos_etcd_is_leader` | — | **0** |
+| `talos_etcd_is_learner` | — | **0** |
+| `talos_etcd_raft_term` | — | **411** |
+| `talos_etcd_raft_index` | — | **2.28207571e+08** |
+| `talos_etcd_raft_applied_index` | — | **2.28207571e+08** |
+| `talos_etcd_status_errors` | — | **0** |
+| `talos_etcd_members` | — | **3** |
+| `talos_etcd_alarm` | `alarm` | `alarm=NOSPACE` → **0** |
+
 ### Image & security
 
 What software the node is running. `Versions.runtime` is deliberately **not** a source
@@ -205,6 +240,12 @@ reports that. `talos_kernel_param_drifted` is 1 wherever `current` and `default`
 It's a gauge because PromQL can't compare two labels on the same series, so "how many
 tunables differ from default" would otherwise be unanswerable from the export.
 
+**Modules are the dynamically loaded ones only.** Talos v1.14 reports them as
+`KernelModuleStatus`, which also lists ~600 built-ins compiled into the kernel image; those
+are dropped. Nodes still on v1.13 only have the deprecated `LoadedKernelModule`, which the
+collector falls back to, so a rolling upgrade keeps every node covered. `state` is
+lowercased in both cases (`live`).
+
 **`default` isn't always the kernel's compiled-in default.** Talos records the value it
 read *before* writing its own, and restores that value if the setting is removed. For most
 tunables that's the compile-time default; `proc.sys.user.max_user_namespaces` is an
@@ -226,7 +267,7 @@ collecting it costs almost nothing — but if the series budget matters,
 | `talos_kernel_params_unsupported` | — | **0** |
 | `talos_kernel_param_drifted` | `param` | `param=proc.sys.fs.aio-max-nr` → **1** |
 | `talos_kernel_params_drifted` | — | **22** |
-| `talos_kernel_module_info` | `module`, `state` | `module=amdgpu, state=Live` → **1** |
+| `talos_kernel_module_info` | `module`, `state` | `module=amdgpu, state=live` → **1** |
 | `talos_kernel_module_size_bytes` | `module` | **1.6965632e+07** |
 | `talos_kernel_module_reference_count` | `module` | **2** |
 | `talos_kernel_modules` | — | **19** |
@@ -262,16 +303,28 @@ metadata — read-only, project quota support, encryption provider.
 
 ### GPU
 
-Utilisation and VRAM, read from `/sys/class/drm/cardN/device/`. **Temperature, fan, power
-cap and clocks are not here** — the sensors collector already picks up amdgpu, since it
-matches hwmon chips generically, so exporting them again here would just be a second
+Two tiers. **Identity, card and driver** need only `os:reader`: rows come from the COSI PCI
+inventory (every display-class device, PCI class `0x03`, is a GPU, driver or not), and the
+card and bound driver come from `LS` link targets. **Utilisation
+and VRAM** are read from `/sys/class/drm/cardN/device/`, which needs `os:admin`; without
+it they are absent, `talos_monitoring_collector_degraded{collector="gpu",
+reason="permission"}` is 1, and the identity rows keep being reported. **Temperature, fan,
+power cap and clocks are not here** — the sensors collector already picks up amdgpu, since
+it matches hwmon chips generically, so exporting them again here would just be a second
 source for the same quantity.
 
-This is file-based, so it needs `os:admin` and self-disables on a permission error, the
-same as `sensors`. A driver that doesn't publish a counter produces an **absent series,
-never a zero**: an Intel iGPU reports no utilisation at all, and showing 0% busy would be
-a lie. A node with no GPU driver bound has no `/sys/class/drm` tree and reports only
-`talos_gpus 0`.
+Each row is keyed on the PCI BDF (`pci`). `card` comes from the `/sys/class/drm/cardN`
+symlink, whose target names the PCI device (`…/0000:03:00.0/drm/card0`); it is empty when no
+card resolves to the device. `driver` is the target of `/sys/bus/pci/devices/<bdf>/driver`,
+so it is the driver bound **now** — empty means none is. COSI's own driver field is
+boot-time inventory (it is empty for a GTX 1070 whose `nvidia` module loads later) and is
+only the fallback when the device directory cannot be listed. A card whose parent is not a
+PCI device is not a GPU: `simpledrm`'s boot framebuffer resolves through
+`…/<bdf>/simple-framebuffer.0/drm/card0` and is skipped, and so is a platform GPU on an ARM
+SoC. A card on a non-display PCI device (an accelerator) gets its own row.
+
+A driver that doesn't publish a counter produces an **absent series, never a zero**: an
+Intel iGPU reports no utilisation at all, and showing 0% busy would be a lie.
 
 There's one exception to absent-never-zero: a card whose PCI device is
 **runtime-suspended** (asleep — amdgpu suspends idle discrete cards after ~10s) can't
@@ -283,10 +336,11 @@ idle card. Memory and GTT stay absent until the card wakes, and the UI shows the
 no `gpu_busy_percent` — still produces an absent series, asleep or awake.
 
 `pci` holds the BDF, which joins onto `talos_hw_pcidevice_info` for vendor and model.
+Counter series carry only `card`, so they exist only where `card` is known.
 
 | Metric | Labels | Example |
 |---|---|---|
-| `talos_gpu_info` | `card`, `driver`, `pci_id`, `pci` | `card=card0, driver=amdgpu, pci_id=1002:7551, pci=0000:03:00.0` → **1** |
+| `talos_gpu_info` | `card`, `driver`, `pci_id`, `pci` | `card=card0, driver=amdgpu, pci_id=1002:7551, pci=0000:03:00.0` → **1** (`card=""` and `driver=""` for an HD 530 with no driver bound) |
 | `talos_gpu_utilization_ratio` | `card` | **0** (a ratio 0–1, not the percent sysfs reports; a derived 0 while the card is runtime-suspended) |
 | `talos_gpu_runtime_suspended` | `card` | **1** (0 while the device is awake; absent where the driver publishes no `power/runtime_status`) |
 | `talos_gpu_memory_total_bytes` | `card` | **3.4208743424e+10** |
@@ -307,7 +361,7 @@ Per-device counters, read from the `DiskStats` RPC — the node's `/proc/disksta
 the half of storage the `block` collector doesn't cover: it knows a disk's model, WWID,
 capacity and fullness, but none of that says whether the disk is doing any work.
 `os:reader`-safe, so unlike the sysfs collectors this needs no `os:admin` and has no
-self-disable path.
+permission gate.
 
 **Sectors are always 512 bytes.** The kernel reports `/proc/diskstats` in 512-byte units
 no matter the device's real logical or physical sector size — multiplying by an NVMe's own
@@ -445,6 +499,11 @@ cluster only published temperature and fan limits, so the `frequency`, `power` a
 
 ### Network
 
+All `os:reader`-safe: interface state and addresses come from COSI, and the counters from
+the `NetworkDeviceStats` RPC (the source `talosctl dashboard` uses), which reports the same
+`/proc/net/dev` values without a file read. Only physical NICs, bonds, bridges, VLANs and
+WireGuard links are reported; the CNI's per-pod veths are dropped.
+
 | Metric | Labels | Example |
 |---|---|---|
 | `talos_net_address_info` | `address`, `family`, `link`, `scope` | `address=192.0.2.3/24, family=inet4, link=eno1, scope=global` → **1** |
@@ -527,16 +586,20 @@ longer keeping up.
 
 `talos_monitoring_collector_degraded` is how a collector says *"I ran, I exported
 something, and part of it is missing"*. `Collect` has one error value, so that state was
-otherwise inexpressible: a collector that self-disabled on a permission error returned
+otherwise inexpressible: a collector paused on a permission error returned
 `nil` before making a single RPC, and a collector re-serving a cached inventory whose
 refresh keeps failing returned `nil` too. Both kept `talos_monitoring_collections_total`
 ticking, moved no error counter, and left one `Warn` line from hours ago as the only trace
 — while the dashboard went on rendering the cached values.
 
 - `reason=permission` — a file-read path switched off because the monitor ServiceAccount
-  lacks `os:admin`: `sensors` and `gpu` (whole collector), `pci` sysfs enrichment, network
-  throughput, and the per-core CPU frequency fallback. The disable flag is cluster-wide,
+  lacks `os:admin`: `sensors` (whole collector), `gpu` counters, `pci` sysfs enrichment,
+  and the per-core CPU frequency fallback. The pause is cluster-wide,
   so one node's RBAC gap lights up every node's series — that is the real blast radius.
+  The paused reads are re-probed every 5 minutes and the series returns to 0 on the first
+  read that succeeds, so a role granted later needs no restart. The refused reads are not
+  counted in `talos_monitoring_node_scrape_errors_total`: the collection itself succeeded,
+  and this series is where the gap shows.
 - `reason=inventory` — a cached disk or DIMM list that has not refreshed since its last
   success. The cached list is still the best data available, so the scrape does not fail;
   `ts` stays at the last success and the refresh retries every tick.
@@ -700,6 +763,12 @@ then `max` and ignores the rest.
 governors react in microseconds — measured +2.9% on an idle 16-thread node, +121% on a
 busy 4-thread one. It's sampled first in the collection to minimise this, but prefer a
 range or quantile over a window to trusting any single reading.
+
+**The three frequency families are absent, never 0, when nothing measured them.** No core
+runs at 0 Hz, so a zero is the `CPUFreqStats` RPC's "no data" (it returns zeros on kernels
+without the legacy `cpuinfo_cur_freq` file) with the `os:admin`-only file fallback
+unavailable. Each family is judged on its own: a core whose `/proc/cpuinfo` gives a current
+frequency but which has no cpufreq policy has `_freq_hertz` and no `_min`/`_max`.
 
 **Cluster-scoped metrics carry no `node` label:** `talos_pv_info`,
 `talos_pv_capacity_bytes`, `talos_monitoring_k8s_nodes`,

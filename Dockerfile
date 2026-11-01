@@ -1,4 +1,4 @@
-FROM golang:1.27.2 AS build
+FROM golang:1.27.3 AS build
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILDDATE=unknown
@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${LDFLAGS}" -o /out/talos-monitoring ./cmd/talos-monitoring
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/talos-monitoring /talos-monitoring
 USER 65534:65534
 EXPOSE 8080

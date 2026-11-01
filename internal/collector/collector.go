@@ -42,6 +42,17 @@ type NodeClient struct {
 	Client *talosclient.Client
 }
 
+// NodeFilter limits a collector to the nodes it applies to (etcd: control planes); others never schedule it.
+type NodeFilter interface {
+	AppliesTo(node nodes.Node) bool
+}
+
+// applies reports whether c runs on n: a collector without a NodeFilter runs everywhere.
+func applies(c Collector, n nodes.Node) bool {
+	f, ok := c.(NodeFilter)
+	return !ok || f.AppliesTo(n)
+}
+
 // Pruner frees per-node state that has no natural expiry; an empty live set (discovery not synced) prunes nothing.
 type Pruner interface {
 	Prune(live map[string]struct{})

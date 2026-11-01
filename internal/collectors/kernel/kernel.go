@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -23,7 +24,7 @@ const Name = "kernel"
 // defaultTTL: tunables and modules change on reboot, not during a run.
 const defaultTTL = time.Hour
 
-// Collector reads KernelParamStatus and LoadedKernelModule from the COSI runtime namespace.
+// Collector reads KernelParamStatus and KernelModuleStatus from the COSI runtime namespace.
 type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
@@ -62,9 +63,14 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	if err != nil {
 		return err
 	}
-	modules, err := collector.List(ctx, st, "LoadedKernelModule", runtimeres.LoadedKernelModuleType)
+	modules, err := collector.List(ctx, st, "KernelModuleStatus", runtimeres.KernelModuleStatusType)
 	if err != nil {
-		return err
+		// Talos before v1.14 has only the deprecated kind; falling back keeps a rolling upgrade's old nodes covered.
+		legacy, legacyErr := collector.List(ctx, st, "LoadedKernelModule", runtimeres.LoadedKernelModuleType) //nolint:staticcheck // pre-v1.14 nodes
+		if legacyErr != nil {
+			return err
+		}
+		modules = legacy
 	}
 
 	view := snapshot.Kernel{}
@@ -157,25 +163,39 @@ func registerModules(nodeName string, l resource.List, reg prometheus.Registerer
 	}, []string{"node"})
 	reg.MustRegister(info, size, refs, count)
 
-	count.WithLabelValues(nodeName).Set(float64(len(l.Items)))
 	view.Modules = make([]snapshot.KernelModule, 0, len(l.Items))
 	for _, r := range l.Items {
-		km, ok := r.(*runtimeres.LoadedKernelModule)
+		m, ok := loadedModule(r)
 		if !ok {
-			return fmt.Errorf("unexpected resource %T in LoadedKernelModule list", r)
+			continue
 		}
-		spec := km.TypedSpec()
-		module := km.Metadata().ID()
-		info.WithLabelValues(nodeName, module, spec.State).Set(1)
-		size.WithLabelValues(nodeName, module).Set(float64(spec.Size))
-		refs.WithLabelValues(nodeName, module).Set(float64(spec.ReferenceCount))
-		view.Modules = append(view.Modules, snapshot.KernelModule{
-			Name: module, State: spec.State,
-			SizeBytes: float64(spec.Size), ReferenceCount: spec.ReferenceCount,
-		})
+		info.WithLabelValues(nodeName, m.Name, m.State).Set(1)
+		size.WithLabelValues(nodeName, m.Name).Set(m.SizeBytes)
+		refs.WithLabelValues(nodeName, m.Name).Set(float64(m.ReferenceCount))
+		view.Modules = append(view.Modules, m)
 	}
+	count.WithLabelValues(nodeName).Set(float64(len(view.Modules)))
 	sort.Slice(view.Modules, func(i, j int) bool { return view.Modules[i].Name < view.Modules[j].Name })
 	return nil
+}
+
+// loadedModule reads either kind; ok is false for a built-in, which is part of the kernel image, not loaded.
+func loadedModule(r resource.Resource) (snapshot.KernelModule, bool) {
+	switch km := r.(type) {
+	case *runtimeres.KernelModuleStatus:
+		spec := km.TypedSpec()
+		if spec.Type != runtimeres.KernelModuleTypeDynamic {
+			return snapshot.KernelModule{}, false
+		}
+		return snapshot.KernelModule{Name: km.Metadata().ID(), State: spec.State.String(),
+			SizeBytes: float64(spec.Size), ReferenceCount: spec.ReferenceCount}, true
+	case *runtimeres.LoadedKernelModule: //nolint:staticcheck // pre-v1.14 nodes
+		spec := km.TypedSpec()
+		// The old kind spells the state "Live"; lowercase keeps the label stable across a mixed-version cluster.
+		return snapshot.KernelModule{Name: km.Metadata().ID(), State: strings.ToLower(spec.State),
+			SizeBytes: float64(spec.Size), ReferenceCount: spec.ReferenceCount}, true
+	}
+	return snapshot.KernelModule{}, false
 }
 
 var _ collector.Collector = (*Collector)(nil)

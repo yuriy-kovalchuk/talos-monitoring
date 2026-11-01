@@ -302,8 +302,8 @@ func TestCollectFreqFallbackFromFile(t *testing.T) {
 	}
 	if got, ok := findMetric(fams, "talos_node_cpu_freq_min_hertz", map[string]string{
 		"node": "node-a", "cpu": "1",
-	}); !ok || got != 0 {
-		t.Errorf("freq core1 minimum: got %v %v, want 0 (no cpufreq files)", got, ok)
+	}); ok {
+		t.Errorf("freq core1 minimum: got %v, want absent (no cpufreq files)", got)
 	}
 }
 
@@ -399,8 +399,7 @@ func TestCollectFreqFallbackPermissionDenied(t *testing.T) {
 	c.newAPI = func(*collector.NodeClient) machineAPI { return api }
 	reg := prometheus.NewRegistry()
 
-	// Permission error must not fail the scrape; the RPC data still lands
-	// and the freq stays empty (the pre-fallback behavior).
+	// Permission error must not fail the scrape; the RPC data still lands and the unmeasured frequency stays absent.
 	if err := c.Collect(context.Background(), testNode(), reg); err != nil {
 		t.Fatalf("Collect with permission-denied fallback: got error %v, want nil", err)
 	}
@@ -408,10 +407,10 @@ func TestCollectFreqFallbackPermissionDenied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	if v, ok := findMetric(fams, "talos_node_cpu_freq_hertz", map[string]string{
-		"node": "node-a", "cpu": "0",
-	}); !ok || v != 0 {
-		t.Errorf("freq after permission error: got %v %v, want 0", v, ok)
+	for _, family := range []string{"talos_node_cpu_freq_hertz", "talos_node_cpu_freq_min_hertz", "talos_node_cpu_freq_max_hertz"} {
+		if n := countFamily(fams, family); n != 0 {
+			t.Errorf("%s: got %d series with no source measuring it, want absent (0 Hz is not a reading)", family, n)
+		}
 	}
 
 	// Second scrape: no error, and the warning was logged exactly once.

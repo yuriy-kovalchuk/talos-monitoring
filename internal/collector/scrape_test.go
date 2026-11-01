@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1205,5 +1206,60 @@ func TestSelfDisabledCollectorDoesNotAssertReachability(t *testing.T) {
 	}
 	if v := valueOf(t, fams, "test_gauge", map[string]string{"node": "n1", "collector": "sens"}); v != 1 {
 		t.Errorf("test_gauge = %v, want 1 once the collector reaches the node again", v)
+	}
+}
+
+// controlPlaneOnly is a collector that applies only to nodes carrying the control-plane role.
+type controlPlaneOnly struct{ fakeCollector }
+
+func (c *controlPlaneOnly) AppliesTo(n nodes.Node) bool {
+	return slices.Contains(n.Roles, "control-plane")
+}
+
+// A NodeFilter collector is never scheduled on other nodes: no call, no error series, no cache entry.
+func TestNodeFilterSkipsNodesItDoesNotApplyTo(t *testing.T) {
+	cp := &controlPlaneOnly{fakeCollector{name: "cp", class: Live, value: 1}}
+	list := []nodes.Node{
+		{Name: "cp1", IP: "10.0.0.1", Roles: []string{"control-plane"}},
+		{Name: "w1", IP: "10.0.0.2", Roles: []string{"worker"}},
+	}
+	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, cp)
+
+	families := e.tick()
+	if calls := cp.callsCount(); calls != 1 {
+		t.Fatalf("got %d collections, want 1 (the control plane only)", calls)
+	}
+	if hasLabel(families, "talos_monitoring_node_scrape_errors_total", "node", "w1") {
+		t.Error("the worker got error series for a collector that never applies to it")
+	}
+	if hasLabel(families, "test_gauge", "node", "w1") {
+		t.Error("the worker got data from a collector that never applies to it")
+	}
+}
+
+// A node that loses the role stops serving the collector's old data instead of re-serving it forever.
+func TestNodeFilterDropsDataAfterARoleChange(t *testing.T) {
+	cp := &controlPlaneOnly{fakeCollector{name: "cp", class: Live, value: 1}}
+	other := &fakeCollector{name: "other", class: Live}
+	list := []nodes.Node{{Name: "n1", IP: "10.0.0.1", Roles: []string{"control-plane"}}}
+	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, cp, other)
+
+	if !hasLabel(e.tick(), "test_gauge", "node", "n1") {
+		t.Fatal("no data while the node held the role")
+	}
+	list[0].Roles = []string{"worker"}
+	e.advance(31 * time.Second)
+	families := e.tick()
+	for _, f := range families {
+		if f.GetName() != "test_gauge" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "collector" && l.GetValue() == "cp" {
+					t.Error("the old role's collector data is still served")
+				}
+			}
+		}
 	}
 }

@@ -99,6 +99,7 @@
 </div>
 {{end}}
 
+
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">Services</span>
@@ -124,6 +125,25 @@
   <div class="card-head"><span class="eyebrow">Health</span></div>
   <div class="empty">No health data yet. The <code>health</code> collector is disabled, or
   it has not completed its first scrape.</div>
+</div>
+{{end}}
+{{/* Its own collector, so it renders whether or not the health collector has reported. */}}
+{{with .Etcd}}
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">etcd</span>
+    <span class="card-sub mono">{{if not .HasLeader}}NO LEADER{{else if .Leader}}leader{{else}}follower{{end}}{{if .Learner}} · learner{{end}} · {{.Members}} {{plural .Members "member" "members"}}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-fleet">
+    <tbody>
+      <tr><td>Database<div class="cell-sub">in use of file size</div></td><td class="mono"><span class="cell-bar"><span style="width:{{.InUsePct}}%"></span></span>{{.DBInUse}} of {{.DBSize}} ({{.InUsePct}}%)</td></tr>
+      <tr><td>Apply lag<div class="cell-sub">raft entries not yet applied</div></td><td class="mono">{{.ApplyLag}}</td></tr>
+      <tr><td>Alarms</td><td class="mono">{{if .Alarms}}{{range .Alarms}}<span class="pill-warn-text">{{.}}</span> {{end}}{{else}}none{{end}}{{if .Errors}}<div class="cell-sub">{{.Errors}} {{plural .Errors "error" "errors"}} in member status</div>{{end}}</td></tr>
+      <tr><td>Member</td><td class="mono">{{.MemberID}}<div class="cell-sub">protocol {{.Version}}</div></td></tr>
+    </tbody>
+  </table>
+  </div>
 </div>
 {{end}}
 </div>

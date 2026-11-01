@@ -62,8 +62,7 @@ func NewPCI(log *slog.Logger) *PCICollector {
 				return registerPCIEnriched(node, list, nil, reg)
 			}),
 		newAPI: func(node *collector.NodeClient) pciFileAPI { return node.Client },
-		gate: collector.NewPermissionGate(log, "pci sysfs enrichment disabled",
-			" and restart the exporter to re-enable; the COSI inventory keeps being reported"),
+		gate:   collector.NewPermissionGate(log, "pci sysfs enrichment", "; the COSI inventory keeps being reported"),
 	}
 }
 
@@ -149,8 +148,11 @@ func (c *PCICollector) Collect(ctx context.Context, node *collector.NodeClient, 
 	}
 
 	details := map[string]pciDetail{}
-	if !c.gate.Off() {
+	if !c.gate.Skip() {
 		details = c.readAll(ctx, node, list)
+		if len(details) > 0 {
+			c.gate.Clear(node.Node.Name)
+		}
 	}
 	if err := registerPCIEnriched(node.Node.Name, list, details, reg); err != nil {
 		return err
@@ -282,7 +284,7 @@ func sumAERCounters(raw string) float64 {
 
 // Degraded flags the sysfs enrichment off, not Stopped: the COSI list still reaches the node.
 func (c *PCICollector) Degraded(string) []collector.Degradation {
-	if c.gate.Off() {
+	if c.gate.Denied() {
 		return []collector.Degradation{{Reason: collector.ReasonPermission}}
 	}
 	return nil

@@ -39,9 +39,20 @@ func param(id, current, def string, unsupported bool) resource.Resource {
 }
 
 func module(id, state string, size, refs int) resource.Resource {
-	km := runtimeres.NewLoadedKernelModule(v1alpha1.NamespaceName, id)
+	km := runtimeres.NewKernelModuleStatus(v1alpha1.NamespaceName, id)
 	spec := km.TypedSpec()
-	spec.State, spec.Size, spec.ReferenceCount = state, size, refs
+	st, err := runtimeres.KernelModuleStateString(state)
+	if err != nil {
+		panic(err)
+	}
+	spec.Type, spec.State, spec.Size, spec.ReferenceCount = runtimeres.KernelModuleTypeDynamic, st, size, refs
+	return km
+}
+
+// builtin is a module compiled into the kernel image, which KernelModuleStatus also lists.
+func builtin(id string) resource.Resource {
+	km := runtimeres.NewKernelModuleStatus(v1alpha1.NamespaceName, id)
+	km.TypedSpec().Type, km.TypedSpec().State = runtimeres.KernelModuleTypeBuiltin, runtimeres.KernelModuleStateBuiltin
 	return km
 }
 
@@ -161,14 +172,19 @@ func TestUnsupportedCountIsZeroOnAHealthyNode(t *testing.T) {
 
 func TestModulesExportStateSizeAndRefs(t *testing.T) {
 	families, snap := collectWith(t, map[resource.Type]resource.List{
-		runtimeres.LoadedKernelModuleType: {Items: []resource.Resource{
-			module("amdgpu", "Live", 16965632, 2),
-			module("nvme", "Live", 61440, 0),
+		runtimeres.KernelModuleStatusType: {Items: []resource.Resource{
+			module("amdgpu", "live", 16965632, 2),
+			module("nvme", "live", 61440, 0),
+			builtin("8021q"),
 		}},
 	})
 
+	// Built-in modules are part of the kernel image: they are neither counted nor exported.
 	if got := gaugeFor(t, families, "talos_kernel_modules", map[string]string{"node": "node-1"}); got != 2 {
-		t.Errorf("module count = %v, want 2", got)
+		t.Errorf("module count = %v, want 2 (the built-in excluded)", got)
+	}
+	if len(snap.Kernel.Modules) != 2 {
+		t.Errorf("snapshot modules = %+v, want the two loaded ones", snap.Kernel.Modules)
 	}
 	if got := gaugeFor(t, families, "talos_kernel_module_size_bytes",
 		map[string]string{"node": "node-1", "module": "amdgpu"}); got != 16965632 {
@@ -179,7 +195,7 @@ func TestModulesExportStateSizeAndRefs(t *testing.T) {
 		t.Errorf("nvme refcount = %v, want 0", got)
 	}
 	if got := gaugeFor(t, families, "talos_kernel_module_info",
-		map[string]string{"node": "node-1", "module": "amdgpu", "state": "Live"}); got != 1 {
+		map[string]string{"node": "node-1", "module": "amdgpu", "state": "live"}); got != 1 {
 		t.Errorf("module_info missing")
 	}
 	// Sorted, so the UI table is stable between scrapes.
@@ -226,8 +242,8 @@ func TestMetricContractAndSnapshotCoverage(t *testing.T) {
 		runtimeres.KernelParamStatusType: {Items: []resource.Resource{
 			param("proc.sys.fs.aio-max-nr", "1048576", "65536", false),
 		}},
-		runtimeres.LoadedKernelModuleType: {Items: []resource.Resource{
-			module("amdgpu", "Live", 16965632, 2),
+		runtimeres.KernelModuleStatusType: {Items: []resource.Resource{
+			module("amdgpu", "live", 16965632, 2),
 		}},
 	})
 	var fams []*dto.MetricFamily
@@ -240,5 +256,39 @@ func TestMetricContractAndSnapshotCoverage(t *testing.T) {
 	}
 	for _, v := range metricguard.SnapshotCovered(snap.Kernel, fams, opts) {
 		t.Error(v)
+	}
+}
+
+// preV114State is a Talos v1.13 node: KernelModuleStatus does not exist there, only the deprecated kind.
+type preV114State struct{ fakeState }
+
+func (f preV114State) List(ctx context.Context, k resource.Kind, opts ...state.ListOption) (resource.List, error) {
+	if k.Type() == runtimeres.KernelModuleStatusType {
+		return resource.List{}, errors.New("resource type KernelModuleStatuses.runtime.talos.dev is not registered")
+	}
+	return f.fakeState.List(ctx, k, opts...)
+}
+
+// A rolling upgrade from v1.13 leaves old nodes with only LoadedKernelModule; they keep their modules, state lowercased.
+func TestPreV114NodesFallBackToLoadedKernelModule(t *testing.T) {
+	legacy := runtimeres.NewLoadedKernelModule(v1alpha1.NamespaceName, "amdgpu") //nolint:staticcheck // the pre-v1.14 kind
+	spec := legacy.TypedSpec()
+	spec.State, spec.Size, spec.ReferenceCount = "Live", 16965632, 2
+
+	snap := snapshot.New()
+	c := New().WithSnapshot(snap)
+	c.state = func(*collector.NodeClient) state.CoreState {
+		return preV114State{fakeState{byType: map[resource.Type]resource.List{
+			runtimeres.LoadedKernelModuleType: {Items: []resource.Resource{legacy}}, //nolint:staticcheck // the pre-v1.14 kind
+		}}}
+	}
+	reg := prometheus.NewRegistry()
+	if err := c.Collect(context.Background(),
+		&collector.NodeClient{Node: nodes.Node{Name: "node-1", IP: "10.0.0.1"}}, reg); err != nil {
+		t.Fatalf("Collect on a pre-v1.14 node: %v", err)
+	}
+	mods := snap.Node("node-1").Kernel.Modules
+	if len(mods) != 1 || mods[0].Name != "amdgpu" || mods[0].State != "live" {
+		t.Errorf("modules = %+v, want amdgpu in state live", mods)
 	}
 }

@@ -356,6 +356,9 @@ type GPU struct {
 	PCIID  string
 	Slot   string // PCI BDF, joins onto the PCI inventory
 
+	// CountersDenied means the sysfs reads need os:admin: every counter is unknown, not absent.
+	CountersDenied bool
+
 	HasBusy     bool
 	BusyPercent float64
 	Suspended   bool // card is runtime-suspended (asleep); busy is a derived 0
@@ -367,6 +370,28 @@ type GPU struct {
 	HasGTT        bool
 	GTTTotalBytes float64
 	GTTUsedBytes  float64
+}
+
+// Etcd is one control-plane member's etcd view; a worker has none.
+type Etcd struct {
+	MemberID        string // hex, as talosctl prints it
+	ProtocolVersion string
+	StorageVersion  string
+
+	DBSizeBytes  float64
+	DBInUseBytes float64
+
+	HasLeader bool
+	Leader    bool // this member is the leader
+	Learner   bool
+
+	RaftTerm         float64
+	RaftIndex        float64
+	RaftAppliedIndex float64
+
+	Errors  int
+	Members int
+	Alarms  []string // NOSPACE, CORRUPT
 }
 
 // DiskIO is one device's counters; a partition's are also in its parent, so sums double-count.
@@ -404,6 +429,7 @@ type Node struct {
 	Volumes     *Volumes
 	GPUs        []GPU
 	DiskIO      []DiskIO
+	Etcd        *Etcd
 }
 
 // Store holds one Node per member; collectors write their own section, so updates are per-section.

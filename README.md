@@ -89,10 +89,13 @@ addition), so the setting survives machine configuration regeneration.
 
 > **Roles:** the app defaults to `os:reader`, enough for every COSI/machine-API
 > collector. File-based collectors (sensors, hwmon, DMI, …) need the `Read`
-> RPC, which is admin-only, and disable themselves gracefully without it. Set
+> RPC, which is admin-only, and pause gracefully without it (re-probing every
+> 5 minutes, so a role change needs no restart). Set
 > `talos.roles` (Helm value) and this machine config's `allowedRoles` to
 > `[os:admin]` to enable those too — the app stays behaviorally read-only
-> either way, but the `os:admin` credential itself is not.
+> either way, but the `os:admin` credential itself is not. On an Omni-managed
+> cluster Omni strips `os:admin` from the ServiceAccount roles; there, point
+> `TALOSCONFIG` at an Omni Talos-proxy config instead.
 
 ### 2. Per-app Talos service account
 

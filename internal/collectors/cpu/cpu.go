@@ -122,8 +122,7 @@ func New(log *slog.Logger, hist *history.Store, freqInterval time.Duration, mode
 		freqInterval: freqInterval,
 		prev:         make(map[string]cpuSample),
 		freqCache:    make(map[string]freqCacheData),
-		fallbackGate: collector.NewPermissionGate(log, "per-core CPU frequency fallback disabled",
-			"; the rest of the cpu data is unaffected"),
+		fallbackGate: collector.NewPermissionGate(log, "per-core CPU frequency fallback", "; the rest of the cpu data is unaffected"),
 	}
 }
 
@@ -372,9 +371,10 @@ func registerFreqFamilies(name string, freqs []*machinepb.CPUFreqStats, files []
 		}
 		// cpufreq reports kHz; these are hertz per the base-unit convention.
 		freqCur[i] = float64(cur) * 1e3
-		f.WithLabelValues(name, core).Set(float64(cur) * 1e3)
-		fMin.WithLabelValues(name, core).Set(float64(minFreq) * 1e3)
-		fMax.WithLabelValues(name, core).Set(float64(maxFreq) * 1e3)
+		// No core runs at 0 Hz: a zero is an unmeasured value (os:reader, no cpufreq), so the series stays absent.
+		setPositive(f, name, core, freqCur[i])
+		setPositive(fMin, name, core, float64(minFreq)*1e3)
+		setPositive(fMax, name, core, float64(maxFreq)*1e3)
 		if governor != "" {
 			gov.WithLabelValues(name, core, governor).Set(1)
 		}
@@ -393,9 +393,16 @@ func registerFreqFamilies(name string, freqs []*machinepb.CPUFreqStats, files []
 	return freqCur, coreStates
 }
 
+// setPositive sets the series only for a measured, non-zero value.
+func setPositive(g *prometheus.GaugeVec, node, core string, v float64) {
+	if v > 0 {
+		g.WithLabelValues(node, core).Set(v)
+	}
+}
+
 // Degraded reports the file fallback off, not Stopped: the CPUStats RPC still reaches the node.
 func (c *Collector) Degraded(string) []collector.Degradation {
-	if c.fallbackGate.Off() {
+	if c.fallbackGate.Denied() {
 		return []collector.Degradation{{Reason: collector.ReasonPermission}}
 	}
 	return nil

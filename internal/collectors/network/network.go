@@ -4,7 +4,6 @@ package network
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -34,26 +33,22 @@ const speedUnknown = 4294967295
 // Collector implements collector.Collector for network interfaces.
 type Collector struct {
 	state  func(node *collector.NodeClient) state.CoreState
-	newAPI func(node *collector.NodeClient) fileAPI
+	newAPI func(node *collector.NodeClient) statsAPI
 	// snap receives the typed interface list alongside the metrics.
 	snap *snapshot.Store
 	now  func() time.Time
 
 	mu   sync.Mutex
 	prev map[string]counterSample // keyed by node name
-
-	// countersGate trips on the first permission error (/proc/net/dev needs os:admin).
-	countersGate *collector.PermissionGate
 }
 
 // New returns the network collector.
-func New(log *slog.Logger) *Collector {
+func New() *Collector {
 	return &Collector{
-		state:        collector.DefaultState,
-		newAPI:       func(node *collector.NodeClient) fileAPI { return node.Client },
-		now:          time.Now,
-		countersGate: collector.NewPermissionGate(log, "network throughput disabled", "; interface state is unaffected"),
-		prev:         make(map[string]counterSample),
+		state:  collector.DefaultState,
+		newAPI: func(node *collector.NodeClient) statsAPI { return talosStats{node.Client} },
+		now:    time.Now,
+		prev:   make(map[string]counterSample),
 	}
 }
 
@@ -205,7 +200,10 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		}
 	}
 
-	counters := c.registerCounters(ctx, c.newAPI(node), name, kept, reg)
+	counters, err := c.registerCounters(ctx, c.newAPI(node), name, kept, reg)
+	if err != nil {
+		return err
+	}
 	if c.snap != nil {
 		for i := range snapLinks {
 			cur, ok := counters[snapLinks[i].Name]

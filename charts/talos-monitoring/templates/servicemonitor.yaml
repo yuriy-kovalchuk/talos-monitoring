@@ -18,8 +18,6 @@ spec:
     matchLabels:
       {{- include "talos-monitoring.selectorLabels" . | nindent 6 }}
   endpoints:
-    # scrapeTimeout must stay above the 10 s per-node collection budget.
-    #
     # honorLabels defaults to true and should stay there. The operator's default
     # relabeling puts `service` and `namespace` on every scraped series, and two
     # of this exporter's own families already use those names: `service` on

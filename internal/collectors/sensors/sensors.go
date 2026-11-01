@@ -80,7 +80,7 @@ func New(log *slog.Logger) *Collector {
 		log:     log,
 		now:     time.Now,
 		layouts: newLayoutCache(),
-		gate:    collector.NewPermissionGate(log, "sensors collector disabled", " and restart the exporter to re-enable"),
+		gate:    collector.NewPermissionGate(log, "sensors collector", ""),
 	}
 }
 
@@ -100,8 +100,8 @@ func (c *Collector) Class() collector.Class { return collector.Live }
 
 // Collect reads each sensor's value and alarm files; the layout itself is cached per layoutTTL.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
-	if c.gate.Off() {
-		return nil // self-disabled (os:reader); the disable warning has the hint
+	if c.gate.Skip() {
+		return nil // paused on a permission error (os:reader) until the next probe; the warning has the hint
 	}
 	ctx = talosclient.WithNode(ctx, node.Node.IP)
 	api := c.api(node)
@@ -130,6 +130,9 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	if permErr != nil {
 		c.gate.Trip(name, permErr)
 		return nil
+	}
+	if len(values) > 0 {
+		c.gate.Clear(name)
 	}
 
 	m := newSensorMetrics(reg)
@@ -384,7 +387,7 @@ func scaleValue(raw, prefix string) (float64, bool) {
 
 // Degraded flags the disable on every node: it is cluster-wide, and nil otherwise looks healthy.
 func (c *Collector) Degraded(string) []collector.Degradation {
-	if c.gate.Off() {
+	if c.gate.Denied() {
 		return []collector.Degradation{{Reason: collector.ReasonPermission, Stopped: true}}
 	}
 	return nil

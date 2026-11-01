@@ -56,7 +56,7 @@ func (c *Collector) freqFromFiles(ctx context.Context, api machineAPI, nodeName 
 	c.mu.Lock()
 	cached := c.freqCache[nodeName]
 	c.mu.Unlock()
-	if c.fallbackGate.Off() {
+	if c.fallbackGate.Skip() {
 		return cached.perCore
 	}
 	if c.fallbackNoted.CompareAndSwap(false, true) {
@@ -68,6 +68,9 @@ func (c *Collector) freqFromFiles(ctx context.Context, api machineAPI, nodeName 
 	now := c.now()
 	cached = c.refreshFreqSlow(ctx, api, nodeName, nCores, now, cached)
 	cached = c.refreshFreqCurrent(ctx, api, nodeName, nCores, now, cached)
+	if cached.ts.Equal(now) || cached.curTS.Equal(now) {
+		c.fallbackGate.Clear(nodeName) // a file read landed this round
+	}
 	// One write-back covers both refreshes: the scraper never overlaps collects for a node.
 	c.mu.Lock()
 	c.freqCache[nodeName] = cached
@@ -128,6 +131,7 @@ func (c *Collector) probeFreqSource(ctx context.Context, api machineAPI, nodeNam
 	if err != nil {
 		if collector.IsPermissionError(err) {
 			c.fallbackGate.Trip(nodeName, err)
+			return "", freqSourceUnknown // re-probe once the role allows it, rather than settle on cpuinfo
 		}
 		c.log.Debug("cpufreq driver not readable; using the /proc/cpuinfo frequency source",
 			"node", nodeName, "err", err)

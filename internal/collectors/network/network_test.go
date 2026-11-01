@@ -3,10 +3,7 @@ package network
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"net/netip"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +11,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/siderolabs/talos/pkg/machinery/api/machine"
 	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
 	talosnet "github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"google.golang.org/grpc/codes"
@@ -25,37 +23,28 @@ import (
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/snapshot"
 )
 
-const procNetDevFixture = `Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    lo: 542646122121 614831192    0    0    0     0          0         0 542646122121 614831192    0    0    0     0       0          0
- bond0:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
-enp1s0: 10670948523965 8157755557    0 2095    0     0          0       853 1959971847888 2221378325    0  299    0     0       0          0
-lxc9f2a1: 123 4 0 0 0 0 0 0 456 7 0 0 0 0 0 0`
+// devStats builds a NetworkDeviceStats response; a node running a CNI lists ~90 devices, nearly all pod veths.
+func devStats(devs ...*machine.NetDev) *machine.NetworkDeviceStatsResponse {
+	return &machine.NetworkDeviceStatsResponse{Messages: []*machine.NetworkDeviceStats{{Devices: devs}}}
+}
 
-func TestParseProcNetDev(t *testing.T) {
-	// Only the interfaces the link filter kept are parsed: a node running a CNI
-	// has ~90 entries here, nearly all pod veths.
-	kept := map[string]bool{"enp1s0": true, "bond0": true}
-	got := parseProcNetDev(procNetDevFixture, kept)
-
+func TestFromDeviceStatsKeepsReportedInterfaces(t *testing.T) {
+	resp := devStats(
+		&machine.NetDev{Name: "lo", RxBytes: 542646122121},
+		&machine.NetDev{Name: "bond0"},
+		&machine.NetDev{Name: "enp1s0", RxBytes: 10670948523965, TxBytes: 1959971847888, RxDropped: 2095, TxDropped: 299},
+		&machine.NetDev{Name: "lxc9f2a1", RxBytes: 123},
+	)
+	got := fromDeviceStats(resp, map[string]bool{"enp1s0": true, "bond0": true})
 	if len(got) != 2 {
-		t.Fatalf("parsed %d interfaces, want 2 (lo and the CNI veth must be skipped): %v", len(got), got)
+		t.Fatalf("kept %d interfaces, want 2 (lo and the CNI veth must be skipped): %v", len(got), got)
 	}
 	c := got["enp1s0"]
-	if c.rxBytes != 10670948523965 {
-		t.Errorf("rxBytes = %d, want 10670948523965", c.rxBytes)
-	}
-	if c.txBytes != 1959971847888 {
-		t.Errorf("txBytes = %d, want 1959971847888", c.txBytes)
+	if c.rxBytes != 10670948523965 || c.txBytes != 1959971847888 {
+		t.Errorf("bytes rx/tx = %d/%d", c.rxBytes, c.txBytes)
 	}
 	if c.rxDropped != 2095 || c.txDropped != 299 {
 		t.Errorf("dropped rx/tx = %d/%d, want 2095/299", c.rxDropped, c.txDropped)
-	}
-	if c.rxErrors != 0 || c.txErrors != 0 {
-		t.Errorf("errors rx/tx = %d/%d, want 0/0", c.rxErrors, c.txErrors)
-	}
-	if _, ok := got["lo"]; ok {
-		t.Error("loopback must not be parsed: it is not in the kept set")
 	}
 }
 
@@ -68,16 +57,6 @@ func TestPerSecondRejectsCounterResets(t *testing.T) {
 	got, ok := perSecond(1500, 500, 5)
 	if !ok || got != 200 {
 		t.Errorf("perSecond(1500, 500, 5) = %v, %v; want 200, true", got, ok)
-	}
-}
-
-func TestParseProcNetDevIgnoresShortLines(t *testing.T) {
-	kept := map[string]bool{"eth0": true}
-	if got := parseProcNetDev("eth0: 1 2 3\n", kept); len(got) != 0 {
-		t.Errorf("a truncated line must be skipped, got %v", got)
-	}
-	if got := parseProcNetDev(strings.Repeat("garbage\n", 3), kept); len(got) != 0 {
-		t.Errorf("lines without a colon must be skipped, got %v", got)
 	}
 }
 
@@ -95,17 +74,14 @@ func (f fakeState) List(_ context.Context, k resource.Kind, _ ...state.ListOptio
 	return f.byType[k.Type()], nil
 }
 
-// fakeFiles serves /proc/net/dev.
-type fakeFiles struct {
-	body string
+// fakeStats serves NetworkDeviceStats.
+type fakeStats struct {
+	resp *machine.NetworkDeviceStatsResponse
 	err  error
 }
 
-func (f fakeFiles) Read(context.Context, string) (io.ReadCloser, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return io.NopCloser(strings.NewReader(f.body)), nil
+func (f *fakeStats) NetworkDeviceStats(context.Context) (*machine.NetworkDeviceStatsResponse, error) {
+	return f.resp, f.err
 }
 
 func link(name, kind string, up bool, speed int, mtu uint32) resource.Resource {
@@ -144,32 +120,30 @@ func address(linkName, addr string) resource.Resource {
 	return a
 }
 
-func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
-
-// netEnv builds a collector over fake COSI and file sources with a clock the
+// netEnv builds a collector over fake COSI and device-stats sources with a clock the
 // test controls, so rate derivation is deterministic.
 type netEnv struct {
 	c     *Collector
 	snap  *snapshot.Store
 	now   time.Time
-	files *fakeFiles
+	stats *fakeStats
 }
 
-func newNetEnv(t *testing.T, links, addrs []resource.Resource, procNetDev string) *netEnv {
+func newNetEnv(t *testing.T, links, addrs []resource.Resource, stats *machine.NetworkDeviceStatsResponse) *netEnv {
 	t.Helper()
 	e := &netEnv{
 		snap:  snapshot.New(),
 		now:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		files: &fakeFiles{body: procNetDev},
+		stats: &fakeStats{resp: stats},
 	}
-	e.c = New(discardLog()).WithSnapshot(e.snap)
+	e.c = New().WithSnapshot(e.snap)
 	e.c.state = func(*collector.NodeClient) state.CoreState {
 		return fakeState{byType: map[resource.Type]resource.List{
 			talosnet.LinkStatusType:    {Items: links},
 			talosnet.AddressStatusType: {Items: addrs},
 		}}
 	}
-	e.c.newAPI = func(*collector.NodeClient) fileAPI { return e.files }
+	e.c.newAPI = func(*collector.NodeClient) statsAPI { return e.stats }
 	e.c.now = func() time.Time { return e.now }
 	return e
 }
@@ -219,13 +193,12 @@ next:
 	return 0, false
 }
 
-const twoScrapeDev = `Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-enp1s0: 1000 10 1 2 0 0 0 0 2000 20 3 4 0 0 0 0`
-
-const twoScrapeDev2 = `Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-enp1s0: 11000 110 1 2 0 0 0 0 12000 120 3 4 0 0 0 0`
+var (
+	twoScrapeDev = devStats(&machine.NetDev{Name: "enp1s0", RxBytes: 1000, RxPackets: 10, RxErrors: 1, RxDropped: 2,
+		TxBytes: 2000, TxPackets: 20, TxErrors: 3, TxDropped: 4})
+	twoScrapeDev2 = devStats(&machine.NetDev{Name: "enp1s0", RxBytes: 11000, RxPackets: 110, RxErrors: 1, RxDropped: 2,
+		TxBytes: 12000, TxPackets: 120, TxErrors: 3, TxDropped: 4})
+)
 
 func TestCollectExportsLinkStateAndAddresses(t *testing.T) {
 	e := newNetEnv(t, []resource.Resource{link("enp1s0", "", true, 1000, 1500)},
@@ -302,7 +275,7 @@ func TestRatesNeedTwoSamples(t *testing.T) {
 
 	// 10s later, +10000 bytes rx => 1000 B/s.
 	e.now = e.now.Add(10 * time.Second)
-	e.files.body = twoScrapeDev2
+	e.stats.resp = twoScrapeDev2
 	fams = e.collect(t)
 	if v, ok := sample(t, fams, "talos_net_link_rx_bytes_per_second", map[string]string{"link": "enp1s0"}); !ok || v != 1000 {
 		t.Errorf("rx rate = %v (found=%v), want 1000", v, ok)
@@ -322,33 +295,23 @@ func TestCounterResetSuppressesTheRate(t *testing.T) {
 	e.collect(t)
 
 	e.now = e.now.Add(10 * time.Second)
-	e.files.body = twoScrapeDev // counters went backwards
+	e.stats.resp = twoScrapeDev // counters went backwards
 	fams := e.collect(t)
 	if v, ok := sample(t, fams, "talos_net_link_rx_bytes_per_second", map[string]string{"link": "enp1s0"}); ok && v != 0 {
 		t.Errorf("rate %v published across a counter reset", v)
 	}
 }
 
-// /proc/net/dev needs os:admin. A permission error must disable the counters
-// for the process lifetime without failing the scrape — link state comes from
-// COSI and is unaffected.
-func TestPermissionErrorDisablesCountersOnly(t *testing.T) {
+// The counters come from an os:reader-safe RPC, so a failure is a real error, counted like any other.
+func TestDeviceStatsErrorFailsTheCollection(t *testing.T) {
 	e := newNetEnv(t, []resource.Resource{link("enp1s0", "", true, 1000, 1500)}, nil, twoScrapeDev)
-	e.files.err = status.Error(codes.PermissionDenied, "denied")
-
-	fams := e.collect(t) // must not error
-	if _, ok := sample(t, fams, "talos_net_link_up", map[string]string{"link": "enp1s0"}); !ok {
-		t.Error("link state was lost when the counter read was refused")
+	wantErr := status.Error(codes.Unavailable, "apid down")
+	e.stats.err = wantErr
+	err := e.c.Collect(context.Background(),
+		&collector.NodeClient{Node: nodes.Node{Name: "node-1"}}, prometheus.NewRegistry())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Collect error = %v, want it to wrap %v", err, wantErr)
 	}
-	if _, ok := sample(t, fams, "talos_net_link_rx_bytes_total", map[string]string{"link": "enp1s0"}); ok {
-		t.Error("counters exported despite a permission error")
-	}
-	if !e.c.countersGate.Off() {
-		t.Error("collector did not self-disable its counter reads")
-	}
-	// Second round must not retry the refused read.
-	e.files.err = errors.New("must not be called")
-	e.collect(t)
 }
 
 func TestListErrorFailsTheCollection(t *testing.T) {
@@ -383,7 +346,7 @@ func TestPruneDropsDepartedNodes(t *testing.T) {
 }
 
 func TestCollectorIdentity(t *testing.T) {
-	c := New(discardLog())
+	c := New()
 	if c.Name() != "network" {
 		t.Errorf("Name = %q, want network", c.Name())
 	}
@@ -404,7 +367,7 @@ func TestMetricContractAndSnapshotCoverage(t *testing.T) {
 		[]resource.Resource{address("enp1s0", "10.0.0.10/24")}, twoScrapeDev)
 	e.collect(t)
 	e.now = e.now.Add(10 * time.Second)
-	e.files.body = twoScrapeDev2
+	e.stats.resp = twoScrapeDev2
 	fams := e.collect(t)
 
 	list := make([]*dto.MetricFamily, 0, len(fams))
@@ -425,20 +388,5 @@ func TestMetricContractAndSnapshotCoverage(t *testing.T) {
 	}
 	for _, v := range metricguard.SnapshotCovered(e.snap.Node("node-1").Links, list, opts) {
 		t.Error(v)
-	}
-}
-
-// TestDegradedReflectsCounterDisable: link state and addresses are still
-// collected when /proc/net/dev is denied, so the round reaches the node and the
-// degradation is not Stopped - only throughput goes dark.
-func TestDegradedReflectsCounterDisable(t *testing.T) {
-	c := New(discardLog())
-	if d := c.Degraded("n1"); len(d) != 0 {
-		t.Fatalf("a live collector reported %v", d)
-	}
-	c.countersGate.Trip("n1", errors.New("permission denied"))
-	d := c.Degraded("n1")
-	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
-		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)
 	}
 }

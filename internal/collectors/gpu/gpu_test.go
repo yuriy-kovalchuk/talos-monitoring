@@ -7,10 +7,14 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/siderolabs/talos/pkg/machinery/api/machine"
+	"github.com/siderolabs/talos/pkg/machinery/resources/hardware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,24 +42,42 @@ func (s *fakeStream) Recv() (*machine.FileInfo, error) {
 	return fi, nil
 }
 
-// fakeAPI is an in-memory file API keyed by path.
+// fakeAPI is an in-memory file API keyed by path; LS is reader-safe, so it ignores readErr as Talos does.
 type fakeAPI struct {
 	entries  []string          // names under /sys/class/drm
+	links    map[string]string // /sys/class/drm name -> symlink target
+	drivers  map[string]string // BDF -> bound driver ("" = listable, nothing bound); a missing BDF is unlistable
 	files    map[string]string // path -> content
 	fileErrs map[string]error  // path -> read failure (file exists but the read fails)
 	lsErr    error
 	readErr  error
 }
 
-func (a *fakeAPI) LS(_ context.Context, _ *machine.ListRequest) (machine.MachineService_ListClient, error) {
+func (a *fakeAPI) LS(_ context.Context, req *machine.ListRequest) (machine.MachineService_ListClient, error) {
+	if bdf, ok := strings.CutPrefix(req.GetRoot(), pciDevicesRoot); ok {
+		driver, ok := a.drivers[bdf]
+		if !ok {
+			return nil, status.Error(codes.NotFound, "no such file or directory")
+		}
+		items := []*machine.FileInfo{{Name: req.GetRoot() + "/vendor"}}
+		if driver != "" {
+			items = append(items, &machine.FileInfo{Name: req.GetRoot() + "/driver", Link: "../../../bus/pci/drivers/" + driver})
+		}
+		return &fakeStream{items: items}, nil
+	}
 	if a.lsErr != nil {
 		return nil, a.lsErr
 	}
 	items := make([]*machine.FileInfo, 0, len(a.entries))
 	for _, e := range a.entries {
-		items = append(items, &machine.FileInfo{Name: drmRoot + "/" + e})
+		items = append(items, &machine.FileInfo{Name: drmRoot + "/" + e, Link: a.links[e]})
 	}
 	return &fakeStream{items: items}, nil
+}
+
+// drmLink is the symlink target sysfs gives a card on a PCI device.
+func drmLink(bdf, name string) string {
+	return "../../devices/pci0000:00/0000:00:01.1/" + bdf + "/drm/" + name
 }
 
 func (a *fakeAPI) Read(_ context.Context, path string) (io.ReadCloser, error) {
@@ -72,13 +94,54 @@ func (a *fakeAPI) Read(_ context.Context, path string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(content)), nil
 }
 
+// fakeState serves a fixed PCI inventory.
+type fakeState struct {
+	state.CoreState
+	items []resource.Resource
+	err   error
+}
+
+// List answers only the hardware namespace, as COSI does: a list in the wrong namespace is silently empty.
+func (f fakeState) List(_ context.Context, k resource.Kind, _ ...state.ListOption) (resource.List, error) {
+	if f.err != nil {
+		return resource.List{}, f.err
+	}
+	if k.Namespace() != hardware.NamespaceName || k.Type() != hardware.PCIDeviceType {
+		return resource.List{}, nil
+	}
+	return resource.List{Items: f.items}, nil
+}
+
+// pciDev builds a COSI PCI device the way Talos formats it: 0x-prefixed lowercase IDs.
+func pciDev(bdf, classID, vendorID, productID, driver string) resource.Resource {
+	p := hardware.NewPCIDeviceInfo(bdf)
+	spec := p.TypedSpec()
+	spec.ClassID, spec.VendorID, spec.ProductID, spec.Driver = classID, vendorID, productID, driver
+	return p
+}
+
+// amdPCI is the inventory behind amdCard: the GPU plus an NVMe drive that must not count.
+func amdPCI() []resource.Resource {
+	return []resource.Resource{
+		pciDev("0000:03:00.0", "0x03", "0x1002", "0x7551", "amdgpu"),
+		pciDev("0000:01:00.0", "0x01", "0x144d", "0xa808", "nvme"),
+	}
+}
+
 func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-func collectWith(t *testing.T, api *fakeAPI) (map[string]*dto.MetricFamily, *snapshot.Node, error) {
+func collectWith(t *testing.T, api *fakeAPI, pci ...resource.Resource) (map[string]*dto.MetricFamily, *snapshot.Node, error) {
+	t.Helper()
+	families, snap, _, err := collectOnce(t, New(discardLog()), api, fakeState{items: pci})
+	return families, snap, err
+}
+
+func collectOnce(t *testing.T, c *Collector, api *fakeAPI, st fakeState) (map[string]*dto.MetricFamily, *snapshot.Node, *Collector, error) {
 	t.Helper()
 	snap := snapshot.New()
-	c := New(discardLog()).WithSnapshot(snap)
+	c.WithSnapshot(snap)
 	c.api = func(*collector.NodeClient) fileAPI { return api }
+	c.state = func(*collector.NodeClient) state.CoreState { return st }
 	reg := prometheus.NewRegistry()
 	err := c.Collect(context.Background(),
 		&collector.NodeClient{Node: nodes.Node{Name: "node-1", IP: "10.0.0.1"}}, reg)
@@ -90,7 +153,7 @@ func collectWith(t *testing.T, api *fakeAPI) (map[string]*dto.MetricFamily, *sna
 	for _, f := range families {
 		byName[f.GetName()] = f
 	}
-	return byName, snap.Node("node-1"), err
+	return byName, snap.Node("node-1"), c, err
 }
 
 func gaugeFor(t *testing.T, families map[string]*dto.MetricFamily, name string, want map[string]string) float64 {
@@ -131,13 +194,16 @@ func has(families map[string]*dto.MetricFamily, name, label, value string) bool 
 	return false
 }
 
-const amdUevent = "DRIVER=amdgpu\nPCI_CLASS=30000\nPCI_ID=1002:7551\nPCI_SLOT_NAME=0000:03:00.0\n"
-
 func amdCard() *fakeAPI {
 	return &fakeAPI{
 		entries: []string{".", "card0", "card0-DP-1", "renderD128", "version"},
+		links: map[string]string{
+			"card0":      drmLink("0000:03:00.0", "card0"),
+			"card0-DP-1": drmLink("0000:03:00.0", "card0/card0-DP-1"),
+			"renderD128": drmLink("0000:03:00.0", "renderD128"),
+		},
+		drivers: map[string]string{"0000:03:00.0": "amdgpu"},
 		files: map[string]string{
-			drmRoot + "/card0/device/uevent":               amdUevent,
 			drmRoot + "/card0/device/gpu_busy_percent":     "37\n",
 			drmRoot + "/card0/device/power/runtime_status": "active\n",
 			drmRoot + "/card0/device/mem_info_vram_total":  "34208743424\n",
@@ -151,7 +217,7 @@ func amdCard() *fakeAPI {
 // Only cardN directories are GPUs. Connectors (card0-DP-1) and render nodes
 // (renderD128) live in the same directory and are not cards.
 func TestOnlyCardDirectoriesAreCollected(t *testing.T) {
-	families, snap, err := collectWith(t, amdCard())
+	families, snap, err := collectWith(t, amdCard(), amdPCI()...)
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -169,10 +235,9 @@ func TestOnlyCardDirectoriesAreCollected(t *testing.T) {
 	}
 }
 
-// Utilisation is a ratio 0-1, not the percent sysfs reports; identity comes
-// from uevent and carries the PCI BDF so it joins the PCI inventory.
+// Utilisation is a ratio 0-1, not the percent sysfs reports; identity carries the BDF so it joins the PCI inventory.
 func TestReadingsAndIdentity(t *testing.T) {
-	families, snap, err := collectWith(t, amdCard())
+	families, snap, err := collectWith(t, amdCard(), amdPCI()...)
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -210,7 +275,7 @@ func TestSuspendedCardReportsDerivedZero(t *testing.T) {
 	api.fileErrs = map[string]error{
 		drmRoot + "/card0/device/gpu_busy_percent": status.Error(codes.Unknown, "read failed: device is suspended"),
 	}
-	families, snap, err := collectWith(t, api)
+	families, snap, err := collectWith(t, api, amdPCI()...)
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -253,20 +318,21 @@ func TestUnexplainedBusyReadFailureStaysAbsent(t *testing.T) {
 	}
 }
 
-// An Intel iGPU publishes uevent but none of the amdgpu counters. Reporting
+// An Intel iGPU publishes none of the amdgpu counters. Reporting
 // 0% busy and 0 bytes of VRAM for it would be a lie: those series must be
 // absent, and the Has* flags must say so.
 func TestDriverWithoutCountersReportsAbsentNotZero(t *testing.T) {
 	api := &fakeAPI{
 		entries: []string{"card0"},
+		links:   map[string]string{"card0": drmLink("0000:00:02.0", "card0")},
+		drivers: map[string]string{"0000:00:02.0": "i915"},
 		files: map[string]string{
-			drmRoot + "/card0/device/uevent": "DRIVER=i915\nPCI_ID=8086:1912\nPCI_SLOT_NAME=0000:00:02.0\n",
 			// power/runtime_status is generic PCI sysfs, so i915 reports it
 			// even though it publishes none of the amdgpu counters.
 			drmRoot + "/card0/device/power/runtime_status": "active\n",
 		},
 	}
-	families, snap, err := collectWith(t, api)
+	families, snap, err := collectWith(t, api, pciDev("0000:00:02.0", "0x03", "0x8086", "0x1912", ""))
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -307,25 +373,166 @@ func TestNoDRMTreeIsNotAnError(t *testing.T) {
 	}
 }
 
-// File reads need os:admin. A permission error must self-disable the collector
-// rather than fail every scrape forever.
-func TestPermissionErrorSelfDisables(t *testing.T) {
-	snap := snapshot.New()
-	c := New(discardLog()).WithSnapshot(snap)
-	api := &fakeAPI{lsErr: status.Error(codes.PermissionDenied, "denied")}
-	c.api = func(*collector.NodeClient) fileAPI { return api }
-	node := &collector.NodeClient{Node: nodes.Node{Name: "node-1"}}
-
-	if err := c.Collect(context.Background(), node, prometheus.NewRegistry()); err != nil {
+// os:reader refuses every Read. Identity and count still come from COSI; the card and counters are unknown.
+func TestReaderRoleStillReportsIdentityAndCount(t *testing.T) {
+	api := amdCard()
+	api.readErr = status.Error(codes.PermissionDenied, "denied")
+	pci := append(amdPCI(), pciDev("0000:c7:00.0", "0x03", "0x1002", "0x1900", "amdgpu"))
+	families, snap, c, err := collectOnce(t, New(discardLog()), api, fakeState{items: pci})
+	if err != nil {
 		t.Fatalf("permission error surfaced as a scrape failure: %v", err)
 	}
-	if !c.gate.Off() {
-		t.Fatal("collector did not self-disable after a permission error")
+	if got := gaugeFor(t, families, "talos_gpus", map[string]string{"node": "node-1"}); got != 2 {
+		t.Errorf("gpu count = %v, want 2 display devices (the NVMe drive is not one)", got)
 	}
-	// Second round is a no-op: it must not retry the same failing call.
-	api.lsErr = errors.New("must not be called")
-	if err := c.Collect(context.Background(), node, prometheus.NewRegistry()); err != nil {
-		t.Fatalf("disabled collector returned an error: %v", err)
+	// LS link targets are reader-safe, so the card is known even though its counters are not.
+	if got := gaugeFor(t, families, "talos_gpu_info", map[string]string{
+		"node": "node-1", "card": "card0", "driver": "amdgpu", "pci_id": "1002:7551", "pci": "0000:03:00.0",
+	}); got != 1 {
+		t.Error("reader-tier identity missing")
+	}
+	for _, name := range []string{"talos_gpu_utilization_ratio", "talos_gpu_memory_total_bytes", "talos_gpu_runtime_suspended"} {
+		if _, ok := families[name]; ok && len(families[name].GetMetric()) > 0 {
+			t.Errorf("%s reported without file access", name)
+		}
+	}
+	if len(snap.GPUs) != 2 || !snap.GPUs[0].CountersDenied || snap.GPUs[0].Card != "card0" {
+		t.Errorf("snapshot GPUs = %+v, want card0 first with its counters denied", snap.GPUs)
+	}
+	if snap.GPUs[1].CountersDenied {
+		t.Error("a device with no DRM card has no counters to deny")
+	}
+	if d := c.Degraded("node-1"); len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
+		t.Errorf("Degraded = %+v, want one non-stopped permission degradation: COSI still reached the node", d)
+	}
+}
+
+// Granting os:admin later brings the counters back at the next probe, with no restart.
+func TestCountersReturnAfterTheRoleIsGranted(t *testing.T) {
+	now := time.Unix(0, 0)
+	c := New(discardLog())
+	c.gate.WithClock(func() time.Time { return now })
+	denied := amdCard()
+	denied.readErr = status.Error(codes.PermissionDenied, "denied")
+	if _, _, _, err := collectOnce(t, c, denied, fakeState{items: amdPCI()}); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// Inside the retry window the refused read is not retried.
+	denied.readErr = errors.New("must not be called")
+	if _, _, _, err := collectOnce(t, c, denied, fakeState{items: amdPCI()}); err != nil {
+		t.Fatalf("paused collector retried the refused read: %v", err)
+	}
+
+	now = now.Add(collector.PermissionRetry)
+	families, snap, _, err := collectOnce(t, c, amdCard(), fakeState{items: amdPCI()})
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := gaugeFor(t, families, "talos_gpu_utilization_ratio", map[string]string{"card": "card0"}); got != 0.37 {
+		t.Errorf("utilization = %v after the role was granted, want 0.37", got)
+	}
+	if snap.GPUs[0].CountersDenied {
+		t.Error("snapshot still marks the counters denied")
+	}
+	if d := c.Degraded("node-1"); len(d) != 0 {
+		t.Errorf("Degraded = %+v after recovery, want none", d)
+	}
+}
+
+// With file access each card lands on its PCI row by BDF; a display device with no card keeps its own row.
+func TestCardsJoinTheirPCIRowByBDF(t *testing.T) {
+	pci := append(amdPCI(), pciDev("0000:00:02.0", "0x03", "0x8086", "0x1912", ""))
+	families, snap, err := collectWith(t, amdCard(), pci...)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := gaugeFor(t, families, "talos_gpus", map[string]string{"node": "node-1"}); got != 2 {
+		t.Errorf("gpu count = %v, want 2", got)
+	}
+	if got := gaugeFor(t, families, "talos_gpu_info", map[string]string{"card": "card0", "pci": "0000:03:00.0"}); got != 1 {
+		t.Error("card0 not joined to its BDF")
+	}
+	if got := gaugeFor(t, families, "talos_gpu_info", map[string]string{"card": "", "pci": "0000:00:02.0", "pci_id": "8086:1912"}); got != 1 {
+		t.Error("driverless display device lost its row")
+	}
+	if len(snap.GPUs) != 2 || snap.GPUs[0].CountersDenied || snap.GPUs[1].CountersDenied {
+		t.Errorf("snapshot GPUs = %+v, want two rows with readable counters", snap.GPUs)
+	}
+}
+
+// A DRM card with no PCI device behind it is a boot framebuffer (simpledrm), not a GPU.
+func TestSlotlessCardIsNotAGPU(t *testing.T) {
+	api := &fakeAPI{
+		entries: []string{"card0"},
+		links:   map[string]string{"card0": "../../devices/pci0000:00/0000:00:02.0/simple-framebuffer.0/drm/card0"},
+	}
+	families, _, err := collectWith(t, api, pciDev("0000:00:02.0", "0x03", "0x8086", "0x1912", ""))
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := gaugeFor(t, families, "talos_gpus", map[string]string{"node": "node-1"}); got != 1 {
+		t.Errorf("gpu count = %v, want 1: the framebuffer is not a second GPU", got)
+	}
+	if has(families, "talos_gpu_info", "card", "card0") {
+		t.Error("simpledrm's card was reported as a GPU")
+	}
+}
+
+// The driver symlink is the bound driver now; COSI's is boot-time and misses a driver loaded later.
+func TestBoundDriverOverridesBootTimeInventory(t *testing.T) {
+	api := &fakeAPI{
+		entries: []string{"card1"},
+		links:   map[string]string{"card1": drmLink("0000:01:00.0", "card1")},
+		drivers: map[string]string{"0000:01:00.0": "nvidia", "0000:00:02.0": ""},
+		readErr: status.Error(codes.PermissionDenied, "denied"),
+	}
+	families, _, err := collectWith(t, api,
+		pciDev("0000:01:00.0", "0x03", "0x10de", "0x1b81", ""),
+		pciDev("0000:00:02.0", "0x03", "0x8086", "0x1912", "i915"))
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := gaugeFor(t, families, "talos_gpu_info", map[string]string{"pci": "0000:01:00.0", "driver": "nvidia", "card": "card1"}); got != 1 {
+		t.Error("the bound driver did not replace COSI's empty boot-time driver")
+	}
+	if got := gaugeFor(t, families, "talos_gpu_info", map[string]string{"pci": "0000:00:02.0", "driver": ""}); got != 1 {
+		t.Error("a listable device with no driver symlink kept COSI's stale driver")
+	}
+}
+
+func TestSlotFromLink(t *testing.T) {
+	for link, want := range map[string]string{
+		"../../devices/pci0000:00/0000:00:08.1/0000:c7:00.0/drm/card1":                      "0000:c7:00.0",
+		"../../devices/pci0000:00/0000:00:01.0/0000:01:00.0/simple-framebuffer.0/drm/card0": "",
+		"../../devices/platform/soc/fd4c0000.gpu/drm/card0":                                 "",
+		"": "",
+	} {
+		if got := slotFromLink(link); got != want {
+			t.Errorf("slotFromLink(%q) = %q, want %q", link, got, want)
+		}
+	}
+}
+
+// A non-display PCI device a DRM driver binds to (an accelerator) still counts once its card is readable.
+func TestDRMCardOnNonDisplayDeviceGetsARow(t *testing.T) {
+	families, _, err := collectWith(t, amdCard(), pciDev("0000:03:00.0", "0x12", "0x1002", "0x7551", "amdgpu"))
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := gaugeFor(t, families, "talos_gpus", map[string]string{"node": "node-1"}); got != 1 {
+		t.Errorf("gpu count = %v, want 1", got)
+	}
+	if !has(families, "talos_gpu_info", "card", "card0") {
+		t.Error("card on a processing-accelerator device was dropped")
+	}
+}
+
+func TestPCIListErrorFailsTheCollection(t *testing.T) {
+	wantErr := errors.New("cosi down")
+	_, _, _, err := collectOnce(t, New(discardLog()), amdCard(), fakeState{err: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Collect error = %v, want it to wrap %v", err, wantErr)
 	}
 }
 
@@ -350,33 +557,25 @@ func TestCollectorIdentity(t *testing.T) {
 // The structural guard: every string this collector writes to the snapshot
 // must be reachable from /metrics, and its families must obey the contract.
 func TestMetricContractAndSnapshotCoverage(t *testing.T) {
-	families, snap, err := collectWith(t, amdCard())
-	if err != nil {
-		t.Fatalf("Collect: %v", err)
-	}
-	fams := make([]*dto.MetricFamily, 0, len(families))
-	for _, f := range families {
-		fams = append(fams, f)
-	}
-	opts := metricguard.Options{}
-	for _, v := range metricguard.Validate(fams, opts) {
-		t.Error(v)
-	}
-	for _, v := range metricguard.SnapshotCovered(snap.GPUs, fams, opts) {
-		t.Error(v)
-	}
-}
-
-// TestDegradedReflectsSelfDisable: like sensors, gpu returns nil before making
-// a single RPC once self-disabled, which is not evidence of reachability.
-func TestDegradedReflectsSelfDisable(t *testing.T) {
-	c := New(discardLog())
-	if d := c.Degraded("n1"); len(d) != 0 {
-		t.Fatalf("a live collector reported %v", d)
-	}
-	c.gate.Trip("n1", errors.New("permission denied"))
-	d := c.Degraded("n1")
-	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || !d[0].Stopped {
-		t.Errorf("Degraded = %+v, want one stopped %q degradation", d, collector.ReasonPermission)
+	denied := amdCard()
+	denied.readErr = status.Error(codes.PermissionDenied, "denied")
+	for name, api := range map[string]*fakeAPI{"admin": amdCard(), "reader": denied} {
+		t.Run(name, func(t *testing.T) {
+			families, snap, err := collectWith(t, api, amdPCI()...)
+			if err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			fams := make([]*dto.MetricFamily, 0, len(families))
+			for _, f := range families {
+				fams = append(fams, f)
+			}
+			opts := metricguard.Options{}
+			for _, v := range metricguard.Validate(fams, opts) {
+				t.Error(v)
+			}
+			for _, v := range metricguard.SnapshotCovered(snap.GPUs, fams, opts) {
+				t.Error(v)
+			}
+		})
 	}
 }

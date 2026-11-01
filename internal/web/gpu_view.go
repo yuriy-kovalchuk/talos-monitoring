@@ -8,12 +8,14 @@ import (
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/snapshot"
 )
 
-// gpuView is one GPU card on the gpu page.
+// gpuView is one GPU on the gpu page.
 type gpuView struct {
 	Card      string
 	Driver    string
 	PCI       string
 	PCIID     string
+	Model     string // product name from the PCI inventory, joined on the BDF
+	Denied    bool   // counters need os:admin, so none were read
 	HasBusy   bool
 	BusyPct   string
 	Suspended bool
@@ -31,10 +33,14 @@ func gpusFrom(n *snapshot.Node) []gpuView {
 	if n == nil {
 		return nil
 	}
+	models := make(map[string]string, len(n.PCI))
+	for _, d := range n.PCI {
+		models[d.BDF] = d.Product
+	}
 	out := make([]gpuView, 0, len(n.GPUs))
 	for _, g := range n.GPUs {
 		row := gpuView{
-			Card: g.Card, Driver: g.Driver, PCI: g.Slot, PCIID: g.PCIID,
+			Card: g.Card, Driver: g.Driver, PCI: g.Slot, PCIID: g.PCIID, Model: models[g.Slot], Denied: g.CountersDenied,
 			HasBusy: g.HasBusy, Suspended: g.Suspended,
 			HasVRAM: g.HasVRAM, HasGTT: g.HasGTT,
 		}

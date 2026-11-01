@@ -21,7 +21,7 @@ func TestKernelPageFlagsUnsupportedParams(t *testing.T) {
 				{Name: "proc.sys.net.core.typo", Unsupported: true},
 			},
 			Modules: []snapshot.KernelModule{
-				{Name: "amdgpu", State: "Live", SizeBytes: 16965632, ReferenceCount: 2},
+				{Name: "amdgpu", State: "live", SizeBytes: 16965632, ReferenceCount: 2},
 			},
 		}
 	})

@@ -12,8 +12,9 @@ talos-monitoring {{ .Chart.Version }} is installed in namespace {{ .Release.Name
    {{- if not (has "os:admin" .Values.talos.roles) }}
 
    Note: the requested roles do not include os:admin, so the file-based
-   collectors (sensors, GPU, PCIe link state, CPU frequency fallback, network
-   counters) self-disable.
+   collectors (sensors, GPU counters, PCIe link state, CPU frequency fallback)
+   pause their file reads and re-probe every 5 minutes; GPU and PCI
+   identity still come from the COSI inventory.
    {{- end }}
 
 3. Dashboard (unauthenticated — keep it cluster-internal):

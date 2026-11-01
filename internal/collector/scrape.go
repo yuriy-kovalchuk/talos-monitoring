@@ -303,6 +303,9 @@ func (s *Scraper) anyDue(live []nodes.Node, enabled []Collector) bool {
 			continue
 		}
 		for _, c := range enabled {
+			if !applies(c, n) {
+				continue
+			}
 			k := key{node: n.Name, collector: c.Name()}
 			if e, ok := s.cache[k]; ok && now.Sub(e.ts) < s.ttlFor(c) {
 				continue // fresh
@@ -321,7 +324,7 @@ func (s *Scraper) scrapeNode(ctx context.Context, n nodes.Node, enabled []Collec
 	if n.IP == "" {
 		return 0 // no IP assigned yet; not dialable, not an error
 	}
-	stale := s.claimStale(n.Name, enabled)
+	stale := s.claimStale(n, enabled)
 	if len(stale) == 0 {
 		return 0
 	}
@@ -421,14 +424,19 @@ func (s *Scraper) TTLs() map[string]time.Duration {
 }
 
 // claimStale returns the stale enabled collectors and marks them in-flight so concurrent refreshes skip them.
-func (s *Scraper) claimStale(node string, enabled []Collector) []Collector {
+func (s *Scraper) claimStale(n nodes.Node, enabled []Collector) []Collector {
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var out []Collector
 	for _, c := range enabled {
-		k := key{node: node, collector: c.Name()}
+		k := key{node: n.Name, collector: c.Name()}
+		if !applies(c, n) {
+			// Never scheduled, so it neither fails nor votes on talos_node_up; data from before a role change goes too.
+			delete(s.cache, k)
+			continue
+		}
 		if e, ok := s.cache[k]; ok && now.Sub(e.ts) < s.ttlFor(c) {
 			continue
 		}
@@ -511,11 +519,19 @@ func (s *Scraper) noteDegraded(node, name string, deg []Degradation) {
 		s.degraded.WithLabelValues(node, name, r).Set(1)
 		if !prev[r] {
 			s.log.Warn("collector serving partial data",
-				"node", node, "collector", name, "reason", r,
-				"hint", "permission: the monitor ServiceAccount needs the os:admin role (Helm value talos.roles), then restart the exporter")
+				"node", node, "collector", name, "reason", r, "hint", degradedHint(r))
 		}
 	}
 	s.mu.Unlock()
+}
+
+// degradedHint is the remediation for one reason; an inventory gap is not fixed by a role.
+func degradedHint(reason string) string {
+	if reason == ReasonPermission {
+		return "the monitor ServiceAccount needs the os:admin role (Helm value talos.roles); " +
+			"a granted role is picked up within " + PermissionRetry.String() + ", no restart"
+	}
+	return "the cached inventory is re-served while its refresh keeps failing; see the scrape errors for this collector"
 }
 
 // stopped is true when the collector made no RPC, so the round must not vote on talos_node_up.

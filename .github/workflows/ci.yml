@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # cd.yml calls this before releasing, so a tag on a red commit never ships.
+  workflow_call:
+
+# Read-only by default; the publish job asks for packages:write itself.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -24,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # tags are needed for git describe in `make build`
 
@@ -38,16 +44,16 @@ jobs:
           # and html/template fixes go1.26.9 carries). Keep this equal to the go.mod go
           # directive and the Dockerfile base image, and keep golangci-lint below built
           # with at least this Go — it refuses modules newer than its own build.
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
 
       - name: Install golangci-lint
         # golangci-lint refuses to load a module whose Go version is newer than the Go
         # it was built with: v2.11.4 (go1.26.1) rejects a go1.27 module outright. v2.14.0
-        # is built with go1.27.0.
+        # is built with go1.27.0, v2.15.0 with go1.27.2 (a newer patch is accepted).
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.14.0/install.sh \
-            | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.15.0/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.15.0
           golangci-lint version
 
       - name: Format check
@@ -66,7 +72,7 @@ jobs:
 
       - name: Install helm
         run: |
-          curl -fsSL "https://get.helm.sh/helm-v3.18.6-linux-amd64.tar.gz" | tar xz
+          curl -fsSL "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz" | tar xz
           sudo mv linux-amd64/helm /usr/local/bin/helm
           helm version --short
 
@@ -86,15 +92,15 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # tags are needed for git describe (VERSION)
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -115,7 +121,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push image (linux/amd64)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64

@@ -2,7 +2,7 @@ BIN       := talos-monitoring
 GO        ?= go
 IMG       ?= talos-monitoring
 TAG       ?= dev
-K8S_VERSION ?= v1.36.1
+K8S_VERSION ?= v1.37.1
 CHART_DIR := charts/talos-monitoring
 MODULE    := github.com/yuriy-kovalchuk/talos-monitoring
 

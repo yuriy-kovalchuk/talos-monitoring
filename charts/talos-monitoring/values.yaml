@@ -64,10 +64,14 @@ collectors:
     freqInterval: 0s
   diskio:
     enabled: true
+  etcd:
+    # Control-plane nodes only (workers run no etcd and are never queried);
+    # os:reader is enough.
+    enabled: true
   gpu:
-    # needs os:admin: reads GPU sysfs files (uevent, link state) through the
-    # Talos Read RPC. Without it the collector self-disables on the first
-    # permission error.
+    # needs os:admin for the counters: utilisation and VRAM are GPU sysfs
+    # files read through the Talos Read RPC. Without it only the counters
+    # drop; GPU identity and count come from the COSI PCI inventory.
     enabled: true
   health:
     enabled: true
@@ -79,8 +83,8 @@ collectors:
     enabled: true
     ttl: 0s                       # --collectors.memory.ttl (0 = scrape interval)
   network:
-    # needs os:admin: the throughput counters read /proc/net/dev. Without it
-    # only the counters drop; interface state comes from COSI.
+    # os:reader is enough: interface state comes from COSI, the counters from
+    # the NetworkDeviceStats RPC.
     enabled: true
   nodeapi:
     enabled: true
@@ -96,8 +100,8 @@ collectors:
     ttl: 0s                       # --collectors.processor.ttl (0 = 1h)
   sensors:
     # needs os:admin: reads hwmon/thermal sysfs files through the Talos Read
-    # RPC. Without it the collector self-disables on the first permission
-    # error.
+    # RPC. Without it the collector pauses on the first permission error and
+    # re-probes every 5 minutes, so granting the role needs no restart.
     enabled: true
     ttl: 0s                       # --collectors.sensors.ttl (0 = scrape interval)
   system:
@@ -123,10 +127,10 @@ collectors:
 
 talos:
   # Roles for the Talos service account. os:reader covers every COSI/machine-API
-  # collector; the file-based ones (sensors, PCI sysfs enrichment, the CPU
-  # frequency fallback, network counters — see the "needs os:admin" notes above)
-  # need os:admin instead, because the Read RPC is admin-only, and self-disable
-  # gracefully without it. Default is the least privilege that still runs: add
+  # collector; the file-based ones (sensors, GPU counters, PCI sysfs enrichment,
+  # the CPU frequency fallback — see the "needs os:admin"
+  # notes above) need os:admin instead, because the Read RPC is admin-only, and
+  # pause gracefully without it, re-probing every 5 minutes. Default is the least privilege that still runs: add
   # os:admin only if you want those extra collectors, and be aware the
   # credential itself is not read-only then — os:admin can also read machine
   # config and secrets.
@@ -161,7 +165,8 @@ serviceMonitor:
   # Requires the monitoring.coreos.com/v1 CRD (Prometheus Operator).
   enabled: false
   interval: 30s
-  # Must stay above the 10 s per-node collection budget.
+  # /metrics serves cached data and never triggers collection, so a scrape is
+  # fast; this only bounds a slow network or a very large export.
   scrapeTimeout: 25s
   # Namespace the ServiceMonitor is created in; empty = release namespace.
   namespace: ""
@@ -264,6 +269,9 @@ extraEnv: []          # [{name, value}]
 extraVolumes: []      # raw Pod spec volumes entries
 extraVolumeMounts: [] # raw volumeMounts entries
 
+# The Deployment always runs one replica, so minAvailable: 1 makes every eviction
+# fail and blocks node drains until the PDB is removed. Enable it only with
+# minAvailable: 0 or when drains may wait on a manual delete.
 podDisruptionBudget:
   enabled: false
   minAvailable: 1

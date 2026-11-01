@@ -15,6 +15,7 @@ import (
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/block"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/cpu"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/diskio"
+	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/etcd"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/gpu"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/health"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/hwinfo"
@@ -50,10 +51,11 @@ func newRootCmd() *cobra.Command {
 
 	// One --collectors.<name>.enabled flag per registered collector, default on.
 	var (
-		enableBlock, enableCPU, enableDiskio, enableGpu, enableHealth bool
-		enableIdentity, enableKernel, enableMemory, enableNetwork     bool
-		enableNodeapi, enablePci, enableProcessor, enableSensors      bool
-		enableSystem, enableTime, enableVolumes                       bool
+		enableBlock, enableCPU, enableDiskio, enableEtcd, enableGpu bool
+		enableHealth                                                bool
+		enableIdentity, enableKernel, enableMemory, enableNetwork   bool
+		enableNodeapi, enablePci, enableProcessor, enableSensors    bool
+		enableSystem, enableTime, enableVolumes                     bool
 	)
 	collectorFlags := []struct {
 		name string
@@ -62,6 +64,7 @@ func newRootCmd() *cobra.Command {
 		{block.Name, &enableBlock},
 		{cpu.Name, &enableCPU},
 		{diskio.Name, &enableDiskio},
+		{etcd.Name, &enableEtcd},
 		{gpu.Name, &enableGpu},
 		{health.Name, &enableHealth},
 		{identity.Name, &enableIdentity},

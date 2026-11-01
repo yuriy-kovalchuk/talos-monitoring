@@ -3,7 +3,12 @@ package nodes
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/siderolabs/talos/pkg/machinery/api/machine"
+	"google.golang.org/grpc"
 )
 
 // newPoolWithConfig builds a pool with a loaded test talosconfig.
@@ -173,5 +178,49 @@ func TestKeepsVerificationWhenNothingMoved(t *testing.T) {
 	p.reconcile(context.Background())
 	if v, up := p.Status("n1"); !up || v != "v1.13.4" {
 		t.Errorf("stable node lost its verification: got %q up=%v", v, up)
+	}
+}
+
+// closedErr reports whether a call fails because the client itself was closed, not because apid is unreachable.
+func closedErr(t *testing.T, c interface {
+	Version(context.Context, ...grpc.CallOption) (*machine.VersionResponse, error)
+}) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	_, err := c.Version(ctx)
+	return err != nil && strings.Contains(err.Error(), "client connection is closing")
+}
+
+// A cert rotation must not close a client a collection is still using; it closes after clientRetireGrace.
+func TestRotationRetiresClientsWithAGracePeriod(t *testing.T) {
+	home := isolateTalosEnv(t)
+	ca, crt, key := genCAAndClient(t)
+	writeTalosconfig(t, home, ca, crt, key)
+	cfg, err := LoadTalosConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(0, 0)
+	p := NewTalosClientPool(testLog, func() []Node { return []Node{{Name: "n1", IP: "127.0.0.1"}} })
+	p.now = func() time.Time { return now }
+	p.setConfig(&cfg)
+	t.Cleanup(p.closeAll)
+
+	old, err := p.Get("127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca2, crt2, key2 := genCAAndClient(t)
+	writeTalosconfig(t, home, ca2, crt2, key2)
+	p.reconcile(t.Context())
+
+	if closedErr(t, old) {
+		t.Fatal("the rotated-out client was closed while a collection could still hold it")
+	}
+	now = now.Add(clientRetireGrace)
+	p.reconcile(t.Context())
+	if !closedErr(t, old) {
+		t.Error("the rotated-out client was never closed: one leaked connection per rotation")
 	}
 }

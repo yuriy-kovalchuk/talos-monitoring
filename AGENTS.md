@@ -16,7 +16,7 @@ internal/
   nodes/                k8s discovery + per-node Talos client pool
   collector/            Collector interface, Registry, Scraper, Gatherer
   collectors/           hwinfo, block, cpu, nodeapi, network, sensors, sysstat,
-                        health, identity, timesync, kernel, volumes, gpu, diskio
+                        health, identity, timesync, kernel, volumes, gpu, diskio, etcd
   snapshot/             typed per-node inventory — the UI's data source
   history/              in-RAM ring, frequency samples only (the CPU page's observed range)
   metricguard/          metric-contract + §1.1 checks the collector tests run
@@ -67,15 +67,27 @@ exposition format back, and neither `/metrics` nor a page render ever triggers a
   and does not fan out. One client per node IP on `:50000`, routed with
   `client.WithNode(ctx, ip)`.
 - **RBAC:** COSI and machine reads need `os:reader`; **file reads (`Read`) need
-  `os:admin`**. File-based collectors self-disable on the first permission error, log a
-  hint naming the Helm value, and count `err="permission"`.
+  `os:admin`**. File-based collectors go through `collector.PermissionGate`: the first
+  permission error pauses the reads cluster-wide, logs a hint naming the Helm value, and
+  sets `collector_degraded{reason="permission"}`; a probe every `PermissionRetry` (5 min)
+  clears it once a read succeeds. They never reach `node_scrape_errors_total`.
+- **Prefer COSI to a file read.** `hardware.*` resources declare no `Sensitivity`, so
+  `os:reader` lists them; build the reader-safe tier there and keep file reads as admin-only
+  enrichment (`pci` and `gpu` are the worked examples). `LS` is reader-safe, `Read` is not,
+  and **`LS` returns symlink targets** (`FileInfo.Link`): sysfs topology — card → BDF,
+  device → bound driver, hwmon chip → owner — is reader-safe; only file *contents* need
+  `os:admin`.
+- **Omni-managed clusters cannot grant `os:admin`** to a ServiceAccount: Omni rejects it in
+  `allowedRoles` patches and strips it from generated configs. A hand patch works until the
+  next config push. The supported admin path is dialling through Omni's Talos proxy with an
+  Omni identity — a `TALOSCONFIG` change, not a code change.
 - **Do not patch the user's cluster machineconfig without explicit permission.**
 
 ## Working here
 
-- Go 1.27.x, Talos machinery v1.13.x (match the cluster), client-go v0.35.x,
-  client_golang v1.24.x and htmx v2.0.9 (vendored). No charting library.
-- Reference cluster: `KUBECONFIG=~/.kube/workload`, 4 nodes, Talos v1.13.4. Verify live —
+- Go 1.27.x, Talos machinery v1.14.x (match the cluster), client-go v0.37.x,
+  client_golang v1.25.x and htmx v2.0.11 (vendored). No charting library.
+- Reference cluster: `KUBECONFIG=~/.kube/workload`, 5 nodes, Talos v1.14.4. Verify live —
   several bugs here were only caught by running against it, not by tests.
 - Commits: `type: description`, no scopes. Enforced by `.githooks/commit-msg`.
 - `make all` = fmt vet build test lint; `make test` runs `-race`.

@@ -3,6 +3,8 @@ package web
 import (
 	"fmt"
 
+	"github.com/dustin/go-humanize"
+
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/snapshot"
 )
 
@@ -122,4 +124,39 @@ func timeSyncFrom(n *snapshot.Node) timeSyncView {
 		view.DriftPPM = fmt.Sprintf("%+.1f ppm", (t.FrequencyRatio-1)*1e6)
 	}
 	return view
+}
+
+// etcdView is a control-plane member's etcd card; nil on workers.
+type etcdView struct {
+	MemberID  string
+	Version   string
+	HasLeader bool
+	Leader    bool
+	Learner   bool
+	Members   int
+	DBSize    string
+	DBInUse   string
+	InUsePct  int
+	ApplyLag  string // raft entries not yet applied
+	Errors    int
+	Alarms    []string
+}
+
+// etcdFrom builds the etcd card from the snapshot.
+func etcdFrom(n *snapshot.Node) *etcdView {
+	if n == nil || n.Etcd == nil {
+		return nil
+	}
+	e := n.Etcd
+	v := &etcdView{
+		MemberID: e.MemberID, Version: e.ProtocolVersion,
+		HasLeader: e.HasLeader, Leader: e.Leader, Learner: e.Learner, Members: e.Members,
+		DBSize: humanize.Bytes(uint64(e.DBSizeBytes)), DBInUse: humanize.Bytes(uint64(e.DBInUseBytes)),
+		ApplyLag: humanize.Comma(int64(e.RaftIndex - e.RaftAppliedIndex)),
+		Errors:   e.Errors, Alarms: e.Alarms,
+	}
+	if e.DBSizeBytes > 0 {
+		v.InUsePct = int(e.DBInUseBytes / e.DBSizeBytes * 100)
+	}
+	return v
 }

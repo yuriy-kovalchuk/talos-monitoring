@@ -99,3 +99,17 @@ func TestHealthPageRendersTheClockStrip(t *testing.T) {
 		t.Error("raw seconds leaked into the clock strip")
 	}
 }
+
+// A control plane's health page carries the etcd card; a member that lost its leader must say so.
+func TestHealthPageShowsEtcdOnControlPlanes(t *testing.T) {
+	snapNode(t, "node-1", func(n *snapshot.Node) {
+		n.Etcd = &snapshot.Etcd{MemberID: "8ecba9ca968d7a0a", ProtocolVersion: "3.6.0", Members: 3,
+			DBSizeBytes: 640e6, DBInUseBytes: 108e6, Alarms: []string{"NOSPACE"}}
+	})
+	h := newHandler(t, true, true, nil)
+	rec, body := do(t, h, "/nodes/node-1/health")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/nodes/node-1/health: got status %d, want 200", rec.Code)
+	}
+	checkBody(t, body, "8ecba9ca968d7a0a", "NOSPACE", "NO LEADER")
+}

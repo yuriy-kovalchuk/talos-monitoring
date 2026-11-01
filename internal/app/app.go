@@ -17,6 +17,7 @@ import (
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/block"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/cpu"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/diskio"
+	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/etcd"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/gpu"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/health"
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collectors/hwinfo"
@@ -122,7 +123,8 @@ func New(log *slog.Logger, opts Options) (*App, error) {
 		volumes.New().WithSnapshot(snap),
 		gpu.New(log).WithSnapshot(snap),
 		diskio.New().WithSnapshot(snap),
-		network.New(log).WithSnapshot(snap),
+		etcd.New().WithSnapshot(snap),
+		network.New().WithSnapshot(snap),
 		hwinfo.NewSystem().WithSnapshot(snap),
 		hwinfo.NewProcessor().WithSnapshot(snap),
 		hwinfo.NewMemory().WithSnapshot(snap),

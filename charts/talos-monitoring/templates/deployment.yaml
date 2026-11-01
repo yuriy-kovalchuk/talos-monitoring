@@ -51,6 +51,8 @@ spec:
             - {{ .Values.collectors.cpu.enabled | quote }}
             - --collectors.diskio.enabled
             - {{ .Values.collectors.diskio.enabled | quote }}
+            - --collectors.etcd.enabled
+            - {{ .Values.collectors.etcd.enabled | quote }}
             - --collectors.gpu.enabled
             - {{ .Values.collectors.gpu.enabled | quote }}
             - --collectors.health.enabled
