@@ -39,7 +39,7 @@ func TestNodeDetailMemory(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/nodes/node-1/memory: got status %d, want 200", rec.Code)
 	}
-	checkBody(t, body, "16 GiB", "4800", "Samsung", "MEM-SN-0", "32 GiB installed across 2 modules")
+	checkBody(t, body, "16 GiB", "4800", "Samsung", "MEM-SN-0", "32 GiB installed in 2 slots")
 	// Slots render sorted: A1 row before A2 row.
 	if strings.Index(body, "MEM-SN-0") > strings.Index(body, "MEM-SN-1") {
 		t.Error("expected A1 row to render before A2 row")
@@ -81,8 +81,11 @@ func TestMemoryPageShowsLiveUsage(t *testing.T) {
 
 	// No swap configured must read as such, not as "0 B used".
 
-	// Overcommit is surfaced with the reason, not as a bare scary number.
-	checkBody(t, body, "committed", "overcommitted")
+	// Commit beyond the limit is normal unless vm.overcommit_memory=2, so it is shown, never alarmed.
+	checkBody(t, body, "48 GiB", "16 GiB")
+	if strings.Contains(body, "overcommitted") {
+		t.Error("committed memory above the commit limit is flagged as a problem")
+	}
 	// The three bar segments must add up to the whole width.
 	widths := regexp.MustCompile(`mem-seg mem-\w+" style="width:(\d+)%`).FindAllStringSubmatch(body, -1)
 	if len(widths) != 3 {

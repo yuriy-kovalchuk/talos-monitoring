@@ -44,17 +44,31 @@ func TestGPUPageWithoutGPUsRenders(t *testing.T) {
 // Under os:reader a GPU is known from the PCI inventory only: it must render, named, without claiming absent counters.
 func TestGPUPageShowsReaderTierRows(t *testing.T) {
 	snapNode(t, "node-1", func(n *snapshot.Node) {
-		n.PCI = []snapshot.PCIDevice{{BDF: "0000:01:00.0", Product: "GP104 [GeForce GTX 1070]"}}
-		n.GPUs = []snapshot.GPU{{Card: "card1", Driver: "nvidia", Slot: "0000:01:00.0", PCIID: "10de:1b81", CountersDenied: true}}
+		n.PCI = []snapshot.PCIDevice{{BDF: "0000:03:00.0", Product: "Navi 48 [Radeon AI PRO R9700]"}}
+		n.GPUs = []snapshot.GPU{{Card: "card0", Driver: "amdgpu", Slot: "0000:03:00.0", PCIID: "1002:7551", CountersDenied: true}}
 	})
 	h := newHandler(t, true, true, nil)
 	rec, body := do(t, h, "/nodes/node-1/gpu")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/nodes/node-1/gpu: got status %d, want 200", rec.Code)
 	}
-	checkBody(t, body, "GP104 [GeForce GTX 1070]", "0000:01:00.0", "os:admin")
+	checkBody(t, body, "Navi 48 [Radeon AI PRO R9700]", "0000:03:00.0", "os:admin")
 	if strings.Contains(body, "not reported by") {
 		t.Error("a GPU whose counters were refused is blamed on its driver")
+	}
+}
+
+// NVIDIA exposes no counters to the Talos API at any role, so its card must not send the operator after os:admin.
+func TestGPUPageDoesNotAskForAdminOnNvidia(t *testing.T) {
+	snapNode(t, "node-1", func(n *snapshot.Node) {
+		n.PCI = []snapshot.PCIDevice{{BDF: "0000:01:00.0", Product: "GP104 [GeForce GTX 1070]"}}
+		n.GPUs = []snapshot.GPU{{Card: "card1", Driver: "nvidia", Slot: "0000:01:00.0", PCIID: "10de:1b81", CountersDenied: true}}
+	})
+	h := newHandler(t, true, true, nil)
+	_, body := do(t, h, "/nodes/node-1/gpu")
+	checkBody(t, body, "GP104 [GeForce GTX 1070]", "0000:01:00.0")
+	if strings.Contains(body, "os:admin") {
+		t.Error("an NVIDIA card is told os:admin would unlock its counters")
 	}
 }
 

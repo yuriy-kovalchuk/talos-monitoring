@@ -1,9 +1,4 @@
 {{define "node_gpu-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / GPU</div>
-  <h1>GPU · {{.Node.Name}}</h1>
-</div>
-
 {{template "gpu-live" .}}
 {{end}}
 
@@ -22,40 +17,37 @@
     <span class="card-sub mono">{{if .Card}}{{.Card}} · {{end}}{{fallback .Driver "no driver bound"}} · {{.PCI}}{{if .PCIID}} · {{.PCIID}}{{end}}</span>
   </div>
   {{if not .Card}}
-  <div class="empty">{{if .Driver}}The {{.Driver}} driver exposes no DRM card for this device{{else}}No
-  driver is bound to this device{{end}}, so there are no utilisation or memory counters to read.</div>
+  <div class="empty">{{if .Driver}}The {{.Driver}} driver exposes no DRM card{{else}}No driver is bound{{end}}, so there are no counters to read.</div>
   {{else if .Denied}}
-  <div class="empty">Utilisation and video memory are sysfs files, and reading them needs the
-  <code>os:admin</code> role (Helm value <code>talos.roles</code>). The read is retried every
-  few minutes, so granting the role needs no restart.</div>
+  <div class="empty">{{if eq .Driver "nvidia"}}The NVIDIA driver does not expose utilisation or memory to the Talos API.{{else}}Utilisation and memory need the <code>os:admin</code> role (Helm <code>talos.roles</code>). Retried every 5 minutes.{{end}}</div>
   {{else}}
-  <div style="overflow-x:auto">
-  <table class="table-fleet">
-    <tbody>
-      <tr>
-        <td>Utilisation</td>
-        <td class="mono">
-          {{if .HasBusy}}
-          <span class="cell-bar"><span style="width:{{.BusyPct}}%"></span></span>
-          {{.BusyPct}}%{{if .Suspended}}<div class="cell-sub">asleep</div>{{end}}
-          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{fallback .Driver "the driver"}}</span>{{end}}
-        </td>
-      </tr>
-      <tr>
-        <td>Video memory</td>
-        <td class="mono">
-          {{if .HasVRAM}}
-          <span class="cell-bar"><span style="width:{{.VRAMPct}}%"></span></span>
-          {{.VRAMUsed}} of {{.VRAMTotal}} ({{.VRAMPct}}%)
-          {{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported by {{fallback .Driver "the driver"}}</span>{{end}}
-        </td>
-      </tr>
-      <tr>
-        <td>GTT<div class="cell-sub">system memory the GPU can address</div></td>
-        <td class="mono">{{if .HasGTT}}{{.GTTUsed}} of {{.GTTTotal}}{{else if .Suspended}}<span class="muted">asleep</span>{{else}}<span class="muted">not reported</span>{{end}}</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="gpu-gauges">
+    <div>
+      <div class="stat-label">Utilisation</div>
+      {{if .HasBusy}}
+      <div class="stat-value {{tone .BusyPct}}">{{.BusyPct}}<span class="unit">%</span></div>
+      <div class="meter {{tone .BusyPct}}"><span style="width:{{.BusyPct}}%"></span></div>
+      {{if .Suspended}}<div class="tile-sub">asleep</div>{{end}}
+      {{else if .Suspended}}<div class="stat-value">–</div><div class="tile-sub">asleep</div>
+      {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported by {{fallback .Driver "the driver"}}</div>{{end}}
+    </div>
+    <div>
+      <div class="stat-label">Video memory</div>
+      {{if .HasVRAM}}
+      <div class="stat-value {{tone .VRAMPct}}">{{.VRAMPct}}<span class="unit">%</span></div>
+      <div class="meter {{tone .VRAMPct}}"><span style="width:{{.VRAMPct}}%"></span></div>
+      <div class="tile-sub">{{.VRAMUsed}} of {{.VRAMTotal}}</div>
+      {{else if .Suspended}}<div class="stat-value">–</div><div class="tile-sub">asleep</div>
+      {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported by {{fallback .Driver "the driver"}}</div>{{end}}
+    </div>
+    <div>
+      <div class="stat-label">GTT</div>
+      {{if .HasGTT}}
+      <div class="stat-value">{{.GTTUsed}}</div>
+      <div class="tile-sub">of {{.GTTTotal}} system memory the GPU can map</div>
+      {{else if .Suspended}}<div class="stat-value">–</div><div class="tile-sub">asleep</div>
+      {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported</div>{{end}}
+    </div>
   </div>
   {{end}}
 </div>
@@ -75,27 +67,21 @@
       <tr>
         <td>{{fallback .Label .Sensor}}{{if .Alarm}}<div class="cell-sub pill-warn-text">alarm raised</div>{{end}}</td>
         <td class="mono">{{.Value}}</td>
-        <td class="mono">{{if .HasLimit}}<span class="cell-bar"><span style="width:{{.Pct}}%"></span></span>{{.Pct}}% <div class="cell-sub">{{.Limit}} {{.LimitOf}}</div>{{else}}<span class="muted">not reported</span>{{end}}</td>
+        <td class="mono">{{if .HasLimit}}{{.Pct}}% of {{.Limit}} {{.LimitOf}}<div class="meter {{tone .Pct}}"><span style="width:{{.Pct}}%"></span></div>{{else}}<span class="muted">no limit published</span>{{end}}</td>
         <td class="mono">{{.ChipName}}<div class="cell-sub">{{.Chip}}</div></td>
       </tr>
       {{end}}
     </tbody>
   </table>
   </div>
-  <div class="card-foot">Readings are shown against their hwmon chip rather than a card.
-  The link itself is exported — <code>talos_sensor_chip_info</code> carries the PCI address
-  that owns each chip — so a Grafana panel can name the card; this page does not yet. The
-  same readings appear on the
-  <a class="crumb" href="/nodes/{{.Node.Name}}/sensors">sensors page</a> alongside every other chip.</div>
+  <div class="card-foot">Grouped by hwmon chip. Also on the <a class="crumb" href="/nodes/{{.Node.Name}}/sensors">sensors page</a>.</div>
 </div>
 {{end}}
 
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">GPU</span></div>
-  <div class="empty">No GPU on this node: the PCI inventory lists no display controller.
-  The full device list is on the
-  <a class="crumb" href="/nodes/{{.Node.Name}}/pci">PCI page</a>.</div>
+  <div class="empty">No GPU on this node. All devices are on the <a class="crumb" href="/nodes/{{.Node.Name}}/pci">PCI page</a>.</div>
 </div>
 {{end}}
 </div>

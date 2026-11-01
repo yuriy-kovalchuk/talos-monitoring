@@ -11,12 +11,10 @@ import (
 
 // netLink is one network interface for the links page.
 type netLink struct {
-	Name     string
-	Type     string
-	Kind     string // "" for a physical NIC
-	Physical bool
-	// master ("" = topmost) is not rendered; it stops the summary counting a bond and its slaves.
-	master    string
+	Name      string
+	Type      string
+	Kind      string // "" for a physical NIC
+	Physical  bool
 	HWAddr    string
 	Driver    string
 	Versions  string // driver / firmware, when reported
@@ -36,6 +34,9 @@ type netLink struct {
 	HasRates bool
 	RxRate   string
 	TxRate   string
+	// Busier direction as a share of link speed; HasUtil is false without a speed to divide by.
+	HasUtil bool
+	UtilPct int
 	// Raw bytes/second so the summary can sum without re-parsing strings.
 	rxPerSecond float64
 	txPerSecond float64
@@ -73,7 +74,6 @@ func netLinksFrom(n *snapshot.Node) []netLink {
 			Type:     l.Type,
 			Kind:     l.Kind,
 			Physical: l.Kind == "",
-			master:   l.Master,
 			HWAddr:   l.HWAddr,
 			Driver:   l.Driver,
 			BusPath:  l.BusPath,
@@ -97,6 +97,10 @@ func netLinksFrom(n *snapshot.Node) []netLink {
 			link.RxRate = formatRate(l.RxPerSecond)
 			link.TxRate = formatRate(l.TxPerSecond)
 			link.rxPerSecond, link.txPerSecond = l.RxPerSecond, l.TxPerSecond
+			if l.SpeedMbit > 0 {
+				link.HasUtil = true
+				link.UtilPct = pctOfF(max(l.RxPerSecond, l.TxPerSecond)*bitsPerByte, l.SpeedMbit*1e6)
+			}
 		}
 		if l.HasCounters {
 			link.HasTotals = true
@@ -159,7 +163,7 @@ type netSummary struct {
 	Problems int // interfaces with a non-zero error or drop counter
 }
 
-// netSummaryFrom sums topmost interfaces only: a bond's counters already include its slaves'.
+// netSummaryFrom sums physical NICs only: every byte on the wire crosses one, while bonds, VLANs and tunnels re-count it.
 func netSummaryFrom(links []netLink) netSummary {
 	var sum netSummary
 	var rx, tx float64
@@ -174,7 +178,7 @@ func netSummaryFrom(links []netLink) netSummary {
 		if l.HasProblem {
 			sum.Problems++
 		}
-		if l.HasRates && l.Up && l.master == "" {
+		if l.HasRates && l.Physical {
 			rx += l.rxPerSecond
 			tx += l.txPerSecond
 		}

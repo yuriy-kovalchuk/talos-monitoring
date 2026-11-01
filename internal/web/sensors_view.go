@@ -20,7 +20,7 @@ type sensorReading struct {
 	// HasLimit is false for drivers that publish no threshold (k10temp, amdgpu).
 	HasLimit bool
 	Limit    string
-	LimitOf  string // "critical" or "max"
+	LimitOf  string // "critical", "max" or "cap"
 	Pct      int
 	Alarm    bool
 }
@@ -101,8 +101,8 @@ func sensorsFrom(n *snapshot.Node) []sensorGroup {
 			value:    sn.Value,
 			Value:    strconv.FormatFloat(sn.Value, 'f', sensorPrecision[kind], 64),
 		}
-		// Critical wins over max: it is the threshold that matters.
-		for _, of := range []string{"critical", "max"} {
+		// Critical wins over max: it is the threshold that matters. A power reading publishes its limit as a cap.
+		for _, of := range []string{"critical", "max", "cap"} {
 			if limit, ok := sn.Limits[of]; ok && limit > 0 {
 				r.HasLimit, r.LimitOf = true, of
 				r.Limit = strconv.FormatFloat(limit, 'f', sensorPrecision[kind], 64)

@@ -37,7 +37,7 @@ func TestHealthPageSeparatesNoCheckFromFailing(t *testing.T) {
 	}
 	// Unhealthy is failing+stopped = 2. dashboard's missing health check is
 	// NOT a fault and must stay out of that count.
-	checkBody(t, body, "1 failing · 1 stopped", "of 4 services",
+	checkBody(t, body, "1 failing · 1 stopped", "4 services",
 		"1 without a health check")
 }
 

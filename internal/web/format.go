@@ -77,13 +77,9 @@ func humanDuration(d time.Duration) string {
 	}
 }
 
-// freqMHz renders hertz as megahertz; the snapshot and metrics carry hertz.
+// freqMHz renders hertz as whole megahertz; cpufreq's kHz resolution is false precision on screen.
 func freqMHz(hz float64) string {
-	mhz := hz / 1e6
-	if mhz == math.Trunc(mhz) {
-		return strconv.FormatInt(int64(mhz), 10)
-	}
-	return strconv.FormatFloat(mhz, 'f', 1, 64)
+	return strconv.FormatInt(int64(math.Round(hz/1e6)), 10)
 }
 
 // pctOf is a whole-percent share, clamped to 0..100.
@@ -130,13 +126,15 @@ func trimFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-// formatRate renders a byte-per-second throughput.
-func formatRate(bps float64) string {
-	if bps < 1 {
-		return "0 B/s"
+// formatRate renders network throughput in bit/s, the unit of the link speed it sits beside.
+func formatRate(bytesPerSec float64) string {
+	if bytesPerSec <= 0 {
+		return "0 bit/s"
 	}
-	return humanize.Bytes(uint64(bps)) + "/s"
+	return humanize.SIWithDigits(bytesPerSec*bitsPerByte, 1, "bit/s")
 }
+
+const bitsPerByte = 8
 
 // formatLinkSpeed renders megabits as Gbit/s once it reaches 1000.
 func formatLinkSpeed(mbit float64) string {

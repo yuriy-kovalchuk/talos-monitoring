@@ -1,9 +1,4 @@
 {{define "node-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / {{.Node.Name}}</div>
-  <h1>{{.Node.Name}}</h1>
-</div>
-
 {{template "node-live" .}}
 {{end}}
 
@@ -13,141 +8,137 @@
 <div id="node-live" hx-get="/partials/nodes/{{.Node.Name}}/overview"
      hx-trigger="every 15s" hx-swap="outerHTML">
 
-{{/* Band 1 · node status. Deliberately NOT a subset of the category cards
-     below: these are whole-machine facts with no section of their own, and the
-     old strip repeated CPU and Memory from the cards two rows down. */}}
+{{/* Row 1 · live utilisation, the four things that answer "is this node OK". */}}
 <div class="stats">
   <div class="stat-card">
-    <div class="stat-label">Stage</div>
-    <div class="stat-value mono">{{if .Health.HasStage}}{{.Health.Stage}}{{else}}–{{end}}<span class="stat-sub">{{if .Health.HasStage}}{{if .Health.Ready}}ready{{else}}NOT ready{{end}}{{else}}not reported{{end}}</span></div>
+    <div class="tile-head">{{template "icon-cpu"}}CPU</div>
+    {{if and .Status .Status.HasCPU}}
+    <div class="stat-value {{tone .Status.CPUPercent}}">{{printf "%.1f" .Status.CPUPercent}}<span class="unit">%</span></div>
+    <div class="meter {{tone .Status.CPUPercent}}"><span style="width:{{printf "%.0f" .Status.CPUPercent}}%"></span></div>
+    <div class="tile-sub">across {{.Summary.Threads}} threads</div>
+    {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported</div>{{end}}
   </div>
   <div class="stat-card">
-    <div class="stat-label">Services</div>
+    <div class="tile-head">{{template "icon-memory"}}Memory</div>
+    {{if .MemUsage.Available}}
+    <div class="stat-value {{tone .MemUsage.UsedPct}}">{{.MemUsage.UsedPct}}<span class="unit">%</span></div>
+    <div class="meter {{tone .MemUsage.UsedPct}}"><span style="width:{{.MemUsage.UsedPct}}%"></span></div>
+    <div class="tile-sub">{{.MemUsage.Used}} used of {{.MemUsage.Total}}</div>
+    {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported</div>{{end}}
+  </div>
+  <div class="stat-card">
+    <div class="tile-head">{{template "icon-health"}}Services</div>
     {{if .Health.Available}}
-    <div class="stat-value{{if not .Health.Unhealthy}} ok{{end}}">{{.Health.Healthy}}<span class="stat-sub">healthy of {{.Health.Total}}{{if .Health.Unhealthy}} · {{.Health.Unhealthy}} need attention{{end}}</span></div>
-    {{else}}<div class="stat-value">–</div>{{end}}
+    <div class="stat-value{{if not .Health.Unhealthy}} ok{{else}} crit{{end}}">{{if .Health.Unhealthy}}{{.Health.Unhealthy}} down{{else}}All OK{{end}}</div>
+    <div class="tile-sub">{{.Health.Healthy}} healthy of {{.Health.Total}}{{if .Health.NoCheck}} · {{.Health.NoCheck}} without a check{{end}}</div>
+    {{else}}<div class="stat-value">–</div><div class="tile-sub">not reported</div>{{end}}
   </div>
   <div class="stat-card">
-    <div class="stat-label">Load</div>
-    {{if and .Status .Status.HasLoad}}
-    <div class="stat-value mono">{{.Status.Load}}<span class="stat-sub">1m / 5m / 15m · {{.Summary.Threads}}t</span></div>
-    {{else}}<div class="stat-value mono">–<span class="stat-sub">not reported</span></div>{{end}}
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Uptime</div>
-    <div class="stat-value mono">{{if .Status}}{{fallback .Status.Uptime "–"}}{{else}}–{{end}}<span class="stat-sub">{{if .TimeSync.Available}}clock {{if .TimeSync.Synced}}synced{{else}}NOT synced{{end}}{{else}}clock not reported{{end}}</span></div>
+    <div class="tile-head">{{template "icon-sensors"}}Hottest sensor</div>
+    {{if .Summary.MaxTemp}}
+    <div class="stat-value">{{.Summary.MaxTemp}}</div>
+    <div class="tile-sub">{{.Summary.TempSensor}}</div>
+    {{else}}<div class="stat-value">–</div><div class="tile-sub">no temperature readable</div>{{end}}
   </div>
 </div>
 
-{{/* Band 2 · one machine card: identity and DMI, de-duplicated. */}}
+{{/* Row 2 · what the box is, next to what it runs. */}}
+<div class="grid-2">
 <div class="card" id="machine">
   <div class="card-head">
     <span class="eyebrow">Machine</span>
     <span class="status-cell"><span class="dot {{if .Node.Up}}dot-ok{{else}}dot-down{{end}}"></span>{{if .Node.Up}}up{{else}}down{{end}}</span>
   </div>
-  {{if and (not .System.Available) (not .Status)}}
-  <div class="empty">No machine data yet · the <code>hwinfo</code> and <code>nodeapi</code>
-  collectors are disabled, or the node has not been scraped yet. Kubernetes identity is
-  shown below.</div>
-  {{end}}
+  {{if and (not .System.Available) (not .Summary.Model)}}
+  <div class="empty">No machine data yet: the <code>hwinfo</code> collector is off or has not run yet.</div>
+  {{else}}
   <table class="kv">
     <tbody>
       {{if .System.Available}}
       <tr><th scope="row">Product</th><td>{{fallback .System.Manufacturer "–"}} {{.System.Product}}{{if .System.Version}} <span class="muted mono">{{.System.Version}}</span>{{end}}</td></tr>
       {{end}}
       {{if .Summary.Model}}
-      <tr><th scope="row">CPU</th><td>{{.Summary.Model}}
-        <span class="muted mono">{{if .Summary.Socket}}{{.Summary.Socket}} · {{end}}{{.Summary.Cores}}c / {{.Summary.Threads}}t{{if .Summary.MaxMHz}} · up to {{.Summary.MaxMHz}} MHz{{end}}</span></td></tr>
+      <tr><th scope="row">CPU</th><td>{{.Summary.Model}}<div class="cell-sub mono">{{if .Summary.Socket}}{{.Summary.Socket}} · {{end}}{{.Summary.Cores}} cores / {{.Summary.Threads}} threads{{if .Summary.MaxMHz}} · up to {{.Summary.MaxMHz}} MHz{{end}}</div></td></tr>
+      {{end}}
+      {{if .Summary.MemoryDIMMs}}
+      <tr><th scope="row">Memory</th><td class="mono">{{.Summary.MemoryTotal}}<div class="cell-sub">{{.Summary.MemoryDIMMs}} {{plural .Summary.MemoryDIMMs "DIMM" "DIMMs"}}{{if .Summary.MemorySpeed}} · {{.Summary.MemorySpeed}} MT/s{{end}}</div></td></tr>
       {{end}}
       {{if .System.Available}}
       <tr><th scope="row">Serial</th><td class="mono">{{fallback .System.SerialNumber "–"}}</td></tr>
       <tr><th scope="row">UUID</th><td class="mono">{{fallback .System.UUID "–"}}</td></tr>
       {{end}}
-      <tr><th scope="row">Address</th><td class="mono">{{fallback .Node.IP "–"}}{{if .Node.Hostname}} · {{.Node.Hostname}}{{end}}{{if .Node.OS}} · {{.Node.OS}}/{{.Node.Arch}}{{end}}</td></tr>
-      <tr><th scope="row">Versions</th><td class="mono">Talos {{fallback .Node.TalosVersion "–"}}{{if and .Status .Status.SHA}} <span class="muted">({{.Status.SHA}})</span>{{end}} · Kubernetes {{fallback .Node.KubeVersion "–"}}</td></tr>
+    </tbody>
+  </table>
+  {{end}}
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="eyebrow">System</span>
+    {{if .Health.HasStage}}<span class="pill pill-{{if .Health.Ready}}ok{{else}}down{{end}}"><span class="pill-dot"></span>{{.Health.Stage}}{{if not .Health.Ready}} · not ready{{end}}</span>{{end}}
+  </div>
+  <table class="kv">
+    <tbody>
       {{if .Status}}
-      <tr><th scope="row">Booted</th><td>{{fallback .Status.Uptime "–"}} ago{{if .Status.Built}} <span class="muted mono">image built {{.Status.Built}}</span>{{end}}</td></tr>
-      <tr><th scope="row">Processes</th><td class="mono">{{.Status.Running}} running · {{.Status.Blocked}} blocked</td></tr>
-      {{if .Status.HasLoad}}<tr><th scope="row">Load average</th><td class="mono">{{.Status.Load}}<span class="muted"> &middot; 1m / 5m / 15m</span></td></tr>{{end}}
+      <tr><th scope="row">Uptime</th><td class="mono">{{fallback .Status.Uptime "–"}}<div class="cell-sub">{{if .TimeSync.Available}}clock {{if .TimeSync.Synced}}synced{{else}}<span class="pill-warn-text">NOT synced</span>{{end}}{{else}}clock not reported{{end}}</div></td></tr>
+      {{if .Status.SHA}}<tr><th scope="row">Talos commit</th><td class="mono">{{.Status.SHA}}{{if .Status.Built}}<div class="cell-sub">built {{.Status.Built}}</div>{{end}}</td></tr>{{end}}
+      <tr><th scope="row">Run queue</th><td class="mono">{{.Status.Running}} runnable · {{.Status.Blocked}} blocked</td></tr>
+      {{if .Status.HasLoad}}<tr><th scope="row">Load average</th><td class="mono">{{.Status.Load}}<div class="cell-sub">1m / 5m / 15m</div></td></tr>{{end}}
       {{end}}
+      {{if .Identity.Available}}
+      {{if .Identity.KernelVersion}}<tr><th scope="row">Kernel</th><td class="mono">{{.Identity.KernelVersion}}</td></tr>{{end}}
+      <tr><th scope="row">Extensions</th><td class="mono">{{len .Identity.Extensions}}{{if .Identity.Schematic}}<div class="cell-sub">schematic {{.Identity.SchematicShort}}</div>{{end}}</td></tr>
+      {{end}}
+      <tr><th scope="row">Address</th><td class="mono">{{fallback .Node.IP "–"}}{{if .Node.Hostname}}<div class="cell-sub">{{.Node.Hostname}}</div>{{end}}</td></tr>
     </tbody>
   </table>
 </div>
+</div>
 
-{{/* Band 3 · category summaries that double as navigation. */}}
+{{/* Row 3 · one card per section, each with the figure that decides whether to open it. */}}
+<div class="card-title">Explore</div>
 <div class="stats stats-6">
   <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/cpu">
-    <div class="stat-label">CPU</div>
-    <div class="card-link-body mono">
-      {{if .Summary.Model}}{{.Summary.Model}}<br>{{.Summary.Cores}}c / {{.Summary.Threads}}t{{if .Summary.MaxMHz}}<br>max {{.Summary.MaxMHz}} MHz{{end}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+    <div class="tile-head">{{template "icon-cpu"}}CPU</div>
+    <div class="card-link-body">{{if .Summary.Model}}{{.Summary.Model}}<div class="tile-sub">{{.Summary.Cores}}c / {{.Summary.Threads}}t{{if .Summary.MaxMHz}} · {{.Summary.MaxMHz}} MHz{{end}}</div>{{else}}no data yet{{end}}</div>
   </a>
   <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/memory">
-    <div class="stat-label">Memory</div>
-    <div class="card-link-body mono">
-      {{if .Summary.MemoryDIMMs}}{{.Summary.MemoryTotal}}<br>{{.Summary.MemoryDIMMs}} {{plural .Summary.MemoryDIMMs "DIMM" "DIMMs"}}{{if .Summary.MemorySpeed}}<br>{{.Summary.MemorySpeed}} MHz{{end}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+    <div class="tile-head">{{template "icon-memory"}}Memory</div>
+    <div class="card-link-body">{{if .Summary.MemoryDIMMs}}{{.Summary.MemoryTotal}}<div class="tile-sub">{{.Summary.MemoryDIMMs}} {{plural .Summary.MemoryDIMMs "DIMM" "DIMMs"}}{{if .Summary.MemorySpeed}} · {{.Summary.MemorySpeed}} MT/s{{end}}</div>{{else}}no data yet{{end}}</div>
   </a>
   <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/storage">
-    <div class="stat-label">Disks</div>
-    <div class="card-link-body mono">
-      {{if .Summary.DiskLocal}}{{.Summary.Storage}}<br>{{.Summary.DiskLocal}} local{{else}}no local disk{{end}}
-      {{if .Summary.DiskNetwork}}<br>+{{.Summary.DiskNetwork}} network{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
-  </a>
-  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/pci">
-    <div class="stat-label">PCI</div>
-    <div class="card-link-body mono">
-      {{if .Summary.PCIDevices}}{{.Summary.PCIDevices}} {{plural .Summary.PCIDevices "device" "devices"}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+    <div class="tile-head">{{template "icon-storage"}}Storage</div>
+    <div class="card-link-body">{{if .Summary.DiskLocal}}{{.Summary.Storage}}<div class="tile-sub">{{.Summary.DiskLocal}} local{{if .Summary.DiskNetwork}} · {{.Summary.DiskNetwork}} network{{end}}</div>{{else}}no local disk{{if .Summary.DiskNetwork}}<div class="tile-sub">{{.Summary.DiskNetwork}} network</div>{{end}}{{end}}</div>
   </a>
   <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/links">
-    <div class="stat-label">Network</div>
-    <div class="card-link-body mono">
-      {{if .Summary.Links}}{{.Summary.LinksUp}} of {{.Summary.Links}} up<br>{{.Summary.Links}} {{plural .Summary.Links "NIC" "NICs"}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+    <div class="tile-head">{{template "icon-network"}}Network</div>
+    <div class="card-link-body">{{if .Summary.Links}}{{.Summary.LinksUp}} of {{.Summary.Links}} up<div class="tile-sub">{{.Summary.Links}} physical {{plural .Summary.Links "NIC" "NICs"}}</div>{{else}}no data yet{{end}}</div>
   </a>
   {{if .GPUs}}
   <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/gpu">
-    <div class="stat-label">GPU</div>
-    <div class="card-link-body mono">
-      {{len .GPUs}} {{plural (len .GPUs) "card" "cards"}}{{range .GPUs}}{{if .HasVRAM}}<br>{{.Card}} {{.VRAMPct}}% VRAM{{end}}{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+    <div class="tile-head">{{template "icon-gpu"}}GPU</div>
+    <div class="card-link-body">{{len .GPUs}} {{plural (len .GPUs) "GPU" "GPUs"}}<div class="tile-sub">{{range $i, $g := .GPUs}}{{if $i}} · {{end}}{{if $g.HasVRAM}}{{$g.VRAMPct}}% VRAM{{else}}{{fallback $g.Driver "no driver"}}{{end}}{{end}}</div></div>
   </a>
   {{end}}
-  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/kernel">
-    <div class="stat-label">Kernel</div>
-    <div class="card-link-body mono">
-      {{if .Kernel.Available}}{{len .Kernel.Params}} tunables<br>{{if .Kernel.Unsupported}}{{.Kernel.Unsupported}} unsupported{{else}}{{len .Kernel.Modules}} modules{{end}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/sensors">
+    <div class="tile-head">{{template "icon-sensors"}}Sensors</div>
+    <div class="card-link-body">{{if .Summary.SensorKinds}}{{range $i, $k := .Summary.SensorKinds}}{{if $i}} · {{end}}{{$k.Count}} {{$k.Kind}}{{end}}{{else}}none readable{{end}}</div>
   </a>
-  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/identity">
-    <div class="stat-label">Image</div>
-    <div class="card-link-body mono">
-      {{if .Identity.Available}}{{if .Identity.Schematic}}{{.Identity.SchematicShort}}<br>{{end}}{{len .Identity.Extensions}} {{plural (len .Identity.Extensions) "extension" "extensions"}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/pci">
+    <div class="tile-head">{{template "icon-pci"}}PCI</div>
+    <div class="card-link-body">{{if .Summary.PCIDevices}}{{.Summary.PCIDevices}} {{plural .Summary.PCIDevices "device" "devices"}}{{else}}no data yet{{end}}</div>
   </a>
   <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/health">
-    <div class="stat-label">Health</div>
-    <div class="card-link-body mono">
-      {{if .Health.Available}}{{.Health.Healthy}} of {{.Health.Total}} healthy<br>{{if .Health.Unhealthy}}{{.Health.Unhealthy}} need attention{{else if .Health.Diagnostics}}{{len .Health.Diagnostics}} {{plural (len .Health.Diagnostics) "warning" "warnings"}}{{else}}stage {{.Health.Stage}}{{end}}{{else}}no data yet{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+    <div class="tile-head">{{template "icon-health"}}Health</div>
+    <div class="card-link-body">{{if .Health.Available}}{{.Health.Healthy}} healthy of {{.Health.Total}}<div class="tile-sub">{{if .Health.Diagnostics}}{{len .Health.Diagnostics}} {{plural (len .Health.Diagnostics) "warning" "warnings"}}{{else}}stage {{.Health.Stage}}{{end}}</div>{{else}}no data yet{{end}}</div>
   </a>
-  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/sensors" data-fill="{{if .GPUs}}mid{{else}}node{{end}}">
-    <div class="stat-label">Sensors</div>
-    <div class="card-link-body mono">
-      {{if .Summary.SensorKinds}}{{range .Summary.SensorKinds}}{{.Count}} {{.Kind}}<br>{{end}}{{else}}none readable{{end}}
-    </div>
-    <div class="card-link-more">View →</div>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/identity">
+    <div class="tile-head">{{template "icon-image"}}Image</div>
+    <div class="card-link-body">{{if .Identity.Available}}{{len .Identity.Extensions}} {{plural (len .Identity.Extensions) "extension" "extensions"}}<div class="tile-sub">{{if .Identity.Schematic}}schematic {{.Identity.SchematicShort}}{{else}}no schematic{{end}}</div>{{else}}no data yet{{end}}</div>
+  </a>
+  <a class="stat-card card-link" href="/nodes/{{.Node.Name}}/kernel" data-fill="{{if .GPUs}}mid{{else}}node{{end}}">
+    <div class="tile-head">{{template "icon-kernel"}}Kernel</div>
+    <div class="card-link-body">{{if .Kernel.Available}}{{len .Kernel.Params}} tunables<div class="tile-sub">{{if .Kernel.Unsupported}}{{.Kernel.Unsupported}} unsupported{{else}}{{len .Kernel.Modules}} {{plural (len .Kernel.Modules) "module" "modules"}}{{end}}</div>{{else}}no data yet{{end}}</div>
   </a>
 </div>
 </div>

@@ -22,6 +22,7 @@ import (
 type nodeDetail struct {
 	Node           *nodeRow        // the node this page is about
 	Section        string          // a nodeSections key; "" is the node overview
+	SectionLabel   string          // heading of the node page header
 	System         systemInfo      // node overview: DMI identity
 	Summary        nodeSummary     // node overview: at-a-glance counts
 	Status         *nodeStatus     // live status card
@@ -122,6 +123,7 @@ func tmplFuncs() template.FuncMap {
 			}
 			return many
 		},
+		"tone": meterTone,
 		"badgeClass": func(role string) string {
 			switch role {
 			case "control-plane":
@@ -133,6 +135,32 @@ func tmplFuncs() template.FuncMap {
 			}
 		},
 	}
+}
+
+// Utilisation from which a meter turns amber, then red.
+const (
+	toneWarnPct = 75
+	toneCritPct = 90
+)
+
+// meterTone grades a 0-100 utilisation for a meter's colour; views hold both int and float64 percentages.
+func meterTone(pct any) string {
+	var v float64
+	switch p := pct.(type) {
+	case int:
+		v = float64(p)
+	case float64:
+		v = p
+	default:
+		return "ok"
+	}
+	switch {
+	case v >= toneCritPct:
+		return "crit"
+	case v >= toneWarnPct:
+		return "warn"
+	}
+	return "ok"
 }
 
 // row builds one node's row without materialising the whole fleet.
@@ -217,7 +245,7 @@ func (d *dashboard) nodePage(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	row, ok := d.row(name)
 	if ok {
-		page := pageData{Page: "node", Title: name, Node: &row}
+		page := pageData{Page: "node", Title: name, Node: &row, SectionLabel: "Overview"}
 		d.fillNodePage(&page, name, nodeDataFor(""))
 		setNodeCookie(w, name)
 		d.render(w, r, page)
@@ -256,7 +284,7 @@ func (d *dashboard) nodeSection(w http.ResponseWriter, r *http.Request) {
 	row, found := d.row(name)
 	if found {
 		page := pageData{Page: meta.page, Title: name + " · " + meta.label,
-			Node: &row, Section: section}
+			Node: &row, Section: section, SectionLabel: meta.label}
 		d.fillNodePage(&page, name, nodeDataFor(section))
 		setNodeCookie(w, name)
 		d.render(w, r, page)
@@ -423,6 +451,9 @@ func fillStatusAndSummary(d *dashboard, page *pageData, snap *snapshot.Node, nam
 	}
 	if want.summary {
 		page.Summary = nodeSummaryFrom(snap)
+	} else if want.cpu {
+		// The cpu page's usage card reads the core and thread totals, not the whole summary.
+		summaryCPU(&page.Summary, snap)
 	}
 }
 

@@ -1,9 +1,4 @@
 {{define "node_identity-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Image</div>
-  <h1>Image · {{.Node.Name}}</h1>
-</div>
-
 {{template "identity-live" .}}
 {{end}}
 
@@ -18,23 +13,28 @@
 
 <div class="stats">
   <div class="stat-card">
-    <div class="stat-label">Schematic</div>
-    <div class="stat-value mono">{{if .Identity.Schematic}}{{.Identity.SchematicShort}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.Schematic}}Image Factory{{else}}not a factory image{{end}}</span></div>
+    <div class="tile-head">{{template "icon-image"}}Schematic</div>
+    <div class="stat-value mono">{{if .Identity.Schematic}}{{.Identity.SchematicShort}}{{else}}–{{end}}</div>
+    <div class="tile-sub">{{if .Identity.Schematic}}Image Factory{{else}}not a factory image{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Extensions</div>
-    <div class="stat-value">{{len .Identity.Extensions}}<span class="stat-sub">{{if .Identity.KernelVersion}}kernel {{.Identity.KernelVersion}}{{else}}installed{{end}}</span></div>
+    <div class="tile-head">{{template "icon-image"}}Extensions</div>
+    <div class="stat-value">{{len .Identity.Extensions}}</div>
+    <div class="tile-sub">{{if .Identity.KernelVersion}}kernel {{.Identity.KernelVersion}}{{else}}installed{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Booted entry</div>
-    <div class="stat-value mono">{{if .Identity.BootedEntry}}{{.Identity.BootedEntry}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.BootedWithUKI}}unified kernel image{{else}}not a UKI{{end}}</span></div>
+    <div class="tile-head">{{template "icon-kernel"}}Booted entry</div>
+    <div class="stat-value mono">{{if .Identity.BootedEntry}}{{.Identity.BootedEntry}}{{else}}–{{end}}</div>
+    <div class="tile-sub">{{if .Identity.BootedWithUKI}}unified kernel image{{else}}not a UKI{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Secure boot</div>
-    <div class="stat-value{{if .Identity.SecureBoot}} ok{{end}}">{{if .Identity.HasSecurity}}{{if .Identity.SecureBoot}}on{{else}}off{{end}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.HasSecurity}}modules {{if .Identity.ModuleSignatureEnforced}}signed{{else}}unsigned{{end}}{{else}}not reported{{end}}</span></div>
+    <div class="tile-head">{{template "icon-about"}}Secure boot</div>
+    <div class="stat-value{{if .Identity.SecureBoot}} ok{{end}}">{{if .Identity.HasSecurity}}{{if .Identity.SecureBoot}}on{{else}}off{{end}}{{else}}–{{end}}</div>
+    <div class="tile-sub">{{if .Identity.HasSecurity}}modules {{if .Identity.ModuleSignatureEnforced}}signed{{else}}unsigned{{end}}{{else}}not reported{{end}}</div>
   </div>
 </div>
 
+<div class="grid-2">
 {{if .Identity.Extensions}}
 <div class="card">
   <div class="card-head">
@@ -78,12 +78,13 @@
   </div>
 </div>
 {{end}}
+</div>
 
 {{if .Identity.Schematic}}
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">Schematic</span>
-    <span class="card-sub">the Image Factory id this node's image was built from</span>
+    <span class="card-sub">Image Factory ID</span>
   </div>
   <div class="card-text mono">{{.Identity.Schematic}}</div>
 </div>
@@ -92,8 +93,7 @@
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">Image</span></div>
-  <div class="empty">No image data yet. The <code>identity</code> collector is disabled, or
-  it has not completed its first scrape.</div>
+  <div class="empty">No image data yet: the <code>identity</code> collector is off or has not run yet.</div>
 </div>
 {{end}}
 </div>

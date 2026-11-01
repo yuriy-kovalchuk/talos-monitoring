@@ -1,48 +1,92 @@
-/* talos-monitoring dashboard dark theme
+/* talos-monitoring dashboard, Material / Google Cloud console style
  *
- * Design tokens follow the talos.dev "Facets" system (Sidero Labs):
- * teal accent, neutral dark base, hairline borders, 8px radii,
- * Manrope for UI text, JetBrains Mono for technical values.
+ * Colour roles follow the Cloud console palette: Google blue as primary,
+ * outlined cards on a neutral page, tonal status chips. Every colour is a
+ * token, defined once for light (:root) and once for dark ([data-theme="dark"]);
+ * theme.js sets data-theme before first paint. Roboto for UI text, Roboto Mono
+ * for technical values.
  */
 
 :root {
-  /* Facets palette (rgb triplets) */
-  --teal: 2 128 125;
-  --teal-bright: 45 212 191;
-  --bg: 6 11 16;
-  --surface: 255 255 255;
-  --hairline: 233 235 237;
-  --text: 233 235 237;
-  --amber: 251 191 36;
-  --red: 248 113 113;
+  --bg: #f8f9fa;
+  --surface: #ffffff;
+  --surface-hover: #f1f3f4;
+  --surface-sunk: #e8eaed;
+  --outline: #dadce0;
+  --outline-strong: #bdc1c6;
+  --text: #202124;
+  --text-2: #5f6368;
+  --text-3: #80868b;
+  --primary: #1a73e8;
+  --primary-text: #1967d2;
+  --primary-container: #e8f0fe;
+  --on-primary-container: #1967d2;
+  --ok: #1e8e3e;
+  --ok-text: #137333;
+  --ok-container: #e6f4ea;
+  --warn: #f9ab00;
+  --warn-text: #b06000;
+  --warn-container: #fef7e0;
+  --err: #d93025;
+  --err-text: #c5221f;
+  --err-container: #fce8e6;
+  --violet: #9334e6;
+  --elevation: 0 1px 2px 0 rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%);
 
   --radius: 8px;
   --topbar-h: 56px; /* sticky header height; the sidebar offsets against it */
-  --shadow: 0 1px 10px 0 rgb(53 58 62 / 6%), 0 2px 4px 0 rgb(53 58 62 / 8%);
+  --sidebar-w: 256px;
 
-  --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-ui: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #202124;
+  --surface: #292a2d;
+  --surface-hover: #35363a;
+  --surface-sunk: #3c4043;
+  --outline: #3c4043;
+  --outline-strong: #5f6368;
+  --text: #e8eaed;
+  --text-2: #9aa0a6;
+  --text-3: #80868b;
+  --primary: #8ab4f8;
+  --primary-text: #8ab4f8;
+  --primary-container: #394457;
+  --on-primary-container: #d2e3fc;
+  --ok: #81c995;
+  --ok-text: #81c995;
+  --ok-container: rgb(129 201 149 / 16%);
+  --warn: #fdd663;
+  --warn-text: #fdd663;
+  --warn-container: rgb(253 214 99 / 14%);
+  --err: #f28b82;
+  --err-text: #f28b82;
+  --err-container: rgb(242 139 130 / 16%);
+  --violet: #c58af9;
+  --elevation: 0 1px 2px 0 rgb(0 0 0 / 30%), 0 1px 3px 1px rgb(0 0 0 / 15%);
+
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html {
-  color-scheme: dark;
-}
-
 body {
   margin: 0;
-  background: rgb(var(--bg));
-  color: rgb(var(--text));
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
 }
 
 a {
-  color: rgb(var(--teal-bright));
+  color: var(--primary-text);
   text-decoration: none;
 }
 
@@ -50,206 +94,36 @@ a:hover {
   text-decoration: underline;
 }
 
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 code {
   font-family: var(--font-mono);
   font-size: 12px;
-  background: rgb(var(--surface) / 6%);
-  border: 1px solid rgb(var(--hairline) / 10%);
-  padding: 1px 6px;
+  background: var(--surface-hover);
   border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .mono {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgb(var(--text) / 50%);
-}
-
-/* ── Top bar ─────────────────────────────────────────────────────────── */
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  /* Wraps to a second row below ~594px instead of forcing the page 508px
-     wide: brand and controls have a combined min-content the bar cannot
-     shrink under, and a fixed height used to wrap them in place. */
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  min-height: var(--topbar-h);
-  padding: 8px 20px;
-  background: rgb(var(--bg) / 85%);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgb(var(--hairline) / 10%);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: rgb(var(--text));
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-}
-
-.brand:hover {
-  text-decoration: none;
-}
-
-.brand svg {
-  flex: none;
-}
-
-.version-chip {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  color: rgb(var(--text) / 55%);
-  border: 1px solid rgb(var(--hairline) / 12%);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* Status pill */
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: rgb(var(--text) / 75%);
-  border: 1px solid rgb(var(--hairline) / 12%);
-  border-radius: 999px;
-  padding: 4px 12px;
-}
-
-.pill-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgb(var(--hairline) / 30%);
-}
-
-.pill-ok .pill-dot {
-  background: rgb(var(--teal-bright));
-  box-shadow: 0 0 6px rgb(var(--teal-bright) / 60%);
-}
-
-.pill-warn .pill-dot {
-  background: rgb(var(--amber));
-}
-
-.pill-down .pill-dot {
-  background: rgb(var(--red));
-}
-
-/* Buttons (solid + ghost, talos.dev style) */
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 700;
-  border-radius: var(--radius);
-  padding: 6px 14px;
-}
-
-.btn:hover {
-  text-decoration: none;
-}
-
-.btn-ghost {
-  border: 1px solid rgb(var(--hairline) / 15%);
-  color: rgb(var(--text));
-  background: transparent;
-}
-
-.btn-ghost:hover {
-  background: rgb(var(--surface) / 5%);
-}
-
-.btn-solid {
-  border: 1px solid rgb(var(--teal) / 60%);
-  background: rgb(var(--teal));
-  color: #f0faf8;
-}
-
-/* ── Shell: sidebar + content ────────────────────────────────────────── */
-
-.shell {
-  display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  min-height: calc(100vh - var(--topbar-h));
-}
-
-.sidebar {
-  position: sticky;
-  top: var(--topbar-h);
-  height: calc(100vh - var(--topbar-h));
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 20px 12px;
-  border-right: 1px solid rgb(var(--hairline) / 10%);
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border-left: 2px solid transparent;
-  border-radius: 6px;
-  color: rgb(var(--text) / 70%);
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 500;
-  text-decoration: none;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
 }
 
-a.nav-link:hover {
-  background: rgb(var(--surface) / 4%);
-  color: rgb(var(--text));
-  text-decoration: none;
+.muted {
+  color: var(--text-2);
 }
 
-.nav-link.active {
-  border-left-color: rgb(var(--teal));
-  background: rgb(var(--teal) / 12%);
-  color: rgb(var(--text));
-}
-
-/* ── Node switcher (top of node pages) ──────────────────────────── */
-
-/* Node switcher — lives in the header, beside the status pill. Sized to match
-   it rather than the page body it used to sit in. */
-.node-switch {
-  display: flex;
-  align-items: center;
-}
-
-/* Visually hidden but announced: the select carries its own aria-label, and
-   the header has no room for a visible one. */
+/* Visually hidden but announced. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -262,144 +136,434 @@ a.nav-link:hover {
   border: 0;
 }
 
-.node-switch select {
-  font-family: var(--font-ui);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: rgb(var(--text) / 75%);
-  background: rgb(var(--surface) / 4%);
-  border: 1px solid rgb(var(--hairline) / 15%);
-  border-radius: var(--radius);
-  padding: 4px 26px 4px 10px;
+/* ── Top app bar ─────────────────────────────────────────────────────── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  /* Wraps to a second row on narrow screens instead of forcing the page wider. */
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-height: var(--topbar-h);
+  padding: 8px 16px 8px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--outline);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand-mark {
+  flex: none;
+  fill: var(--primary);
+}
+
+.version-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--surface-hover);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
   cursor: pointer;
-  /* Chevron drawn inline so the control needs no extra request and no
-     external asset (the CSP allows data: images). */
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+/* One icon per preference; without theme.js the system icon shows. */
+.theme-icon {
+  display: none;
+}
+
+:root:not([data-theme-pref]) .ti-system,
+[data-theme-pref="system"] .ti-system,
+[data-theme-pref="light"] .ti-light,
+[data-theme-pref="dark"] .ti-dark {
+  display: block;
+}
+
+/* Status chip (top bar, stage, service state) */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+td .pill {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.pill-ok {
+  border-color: transparent;
+  background: var(--ok-container);
+  color: var(--ok-text);
+}
+
+.pill-warn {
+  border-color: transparent;
+  background: var(--warn-container);
+  color: var(--warn-text);
+}
+
+.pill-down {
+  border-color: transparent;
+  background: var(--err-container);
+  color: var(--err-text);
+}
+
+.pill-ok .pill-dot { background: var(--ok); }
+.pill-warn .pill-dot { background: var(--warn); }
+.pill-down .pill-dot { background: var(--err); }
+
+/* Node switcher, styled like the console's project picker. */
+.node-switch {
+  display: flex;
+  align-items: center;
+}
+
+.node-switch select {
+  height: 32px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background-color: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: 4px;
+  padding: 0 30px 0 12px;
+  cursor: pointer;
+  /* Chevron drawn inline so the control needs no extra request (the CSP allows data: images). */
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2380868b'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 7px center;
-  background-size: 13px;
+  background-position: right 6px center;
+  background-size: 20px;
 }
 
 .node-switch select:hover {
-  color: rgb(var(--text));
-  border-color: rgb(var(--hairline) / 30%);
+  background-color: var(--surface-hover);
 }
 
-.node-switch select:focus-visible {
-  outline: 2px solid rgb(var(--teal));
-  outline-offset: 1px;
+/* ── Shell: navigation drawer + content ──────────────────────────────── */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  min-height: calc(100vh - var(--topbar-h));
+}
+
+.sidebar {
+  position: sticky;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--outline);
+}
+
+.nav-group + .nav-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--outline);
+}
+
+.nav-title {
+  padding: 8px 24px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.nav-subtitle {
+  padding: 12px 24px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* Exporter links sit at the foot of the drawer, away from the node's sections. */
+.nav-bottom {
+  margin-top: auto;
+}
+
+.sidebar .node-switch {
+  padding: 4px 16px 4px 24px;
+}
+
+.sidebar .node-switch select {
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  margin-right: 8px;
+  padding: 0 24px;
+  border-radius: 0 18px 18px 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+a.nav-link:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.nav-link .icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-right: 20px;
+  fill: var(--text-2);
+}
+
+.nav-link.active .icon {
+  fill: currentColor;
+}
+
+.nav-link.active {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-weight: 500;
 }
 
 .nav-muted {
-  font-size: 12px;
-  color: rgb(var(--text) / 45%);
-  padding: 4px 12px;
-}
-
-.card-foot {
-  margin-top: 12px;
-  padding: 10px 16px 12px;
-  border-top: 1px solid rgb(var(--hairline) / 12%);
-  font-size: 12.5px;
-  color: rgb(var(--text) / 60%);
-}
-
-.muted {
-  color: rgb(var(--text) / 50%);
+  padding: 4px 24px;
+  font-size: 13px;
+  color: var(--text-3);
 }
 
 .content {
-  /* min-width: 0 matters: this is a grid item, and a grid item's automatic
-     min-width is its min-content size. A nowrap table inside would otherwise
-     push the column past the viewport and scroll the whole page sideways on
-     phones; with 0 the inner overflow-x:auto wrappers get to do their job. */
+  /* min-width: 0 lets a wide table scroll inside its card instead of
+     widening this grid item and scrolling the whole page sideways. */
   min-width: 0;
   width: 100%;
-  max-width: min(1100px, 100%);
+  max-width: min(1280px, 100%);
   margin: 0 auto;
-  padding: 24px 28px 40px;
+  padding: 24px 32px 40px;
 }
 
+/* ── Page header ─────────────────────────────────────────────────────── */
+
 .page-head {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-head h1 {
-  margin: 4px 0 0;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.33;
+}
+
+.h1-sub {
+  color: var(--text-2);
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
 }
 
 .crumb {
-  color: rgb(var(--text) / 50%);
+  color: var(--text-2);
 }
 
 .crumb:hover {
-  color: rgb(var(--teal-bright));
+  color: var(--primary-text);
 }
 
-/* ── Stat cards ──────────────────────────────────────────────────────── */
+.crumb-sep {
+  color: var(--text-3);
+}
+
+.resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.resource-meta .badge {
+  margin-right: -8px;
+}
+
+/* ── Scorecards ──────────────────────────────────────────────────────── */
 
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
-  background: rgb(var(--surface) / 3%);
-  border: 1px solid rgb(var(--hairline) / 10%);
+  background: var(--surface);
+  border: 1px solid var(--outline);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 14px 16px;
+  padding: 16px;
 }
 
 .stat-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgb(var(--text) / 50%);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 .stat-value {
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.15;
 }
 
 .stat-value.mono {
-  font-size: 19px;
-  font-weight: 500;
-  padding-top: 4px;
+  font-size: 18px;
+  padding-top: 6px;
 }
 
 .stat-value.ok {
-  color: rgb(var(--teal-bright));
+  color: var(--ok-text);
 }
 
-.stat-sub {
-  display: block;
-  margin-top: 3px;
-  font-size: 12px;
+/* A heading between groups of cards. */
+.card-title {
+  margin: 24px 0 12px;
+  font-size: 16px;
   font-weight: 500;
-  letter-spacing: 0;
-  color: rgb(var(--text) / 45%);
 }
+
+/* Tiles: a scorecard with an icon, one live figure and an optional meter. */
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.tile-head .icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: var(--primary);
+}
+
+.unit {
+  margin-left: 3px;
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.tile-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.meter {
+  height: 6px;
+  margin: 12px 0 2px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-sunk);
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
+.meter.warn > span { background: var(--warn); }
+.meter.crit > span { background: var(--err); }
+.stat-value.warn { color: var(--warn-text); }
+.stat-value.crit { color: var(--err-text); }
 
 /* ── Cards & tables ──────────────────────────────────────────────────── */
 
 .card {
-  background: rgb(var(--surface) / 3%);
-  border: 1px solid rgb(var(--hairline) / 10%);
+  background: var(--surface);
+  border: 1px solid var(--outline);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
@@ -407,306 +571,211 @@ a.nav-link:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgb(var(--hairline) / 10%);
+  border-bottom: 1px solid var(--outline);
+}
+
+/* A card's eyebrow is its title. */
+.card-head .eyebrow {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text);
 }
 
 .card-head .link {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.card-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.card-foot {
+  padding: 12px 16px;
+  border-top: 1px solid var(--outline);
   font-size: 12.5px;
-  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* Small cards that belong together sit side by side when there is room. */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.grid-2 > .card {
+  margin-bottom: 0;
+}
+
+/* Both cards are conditional; an empty pair must not leave a gap. */
+.grid-2:not(:has(> *)) {
+  display: none;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 th,
 td {
   text-align: left;
   padding: 10px 16px;
-  border-bottom: 1px solid rgb(var(--hairline) / 8%);
+  border-bottom: 1px solid var(--outline);
 }
 
 thead th {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: rgb(var(--text) / 50%);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
-tbody tr:last-child td {
+tbody tr:last-child td,
+tbody tr:last-child th {
   border-bottom: none;
 }
 
 tbody tr:hover td {
-  background: rgb(var(--surface) / 2.5%);
+  background: var(--surface-hover);
 }
 
 .row-link {
-  color: rgb(var(--text));
-  font-weight: 600;
-}
-
-.row-link:hover {
-  color: rgb(var(--teal-bright));
-  text-decoration: underline;
+  color: var(--primary-text);
+  font-weight: 500;
 }
 
 /* Key/value tables (node detail, about) */
-
 table.kv th {
-  /* Size the label column to the longest label instead of always spending
-     160px, which was 43% of a phone-width card. */
-  width: max-content;
-  max-width: 160px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: rgb(var(--text) / 50%);
+  /* Size the label column to the longest label instead of a fixed width. */
+  width: 1%;
+  padding-right: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
-/* Badges */
-
+/* Role and attachment chips */
 .badge {
   display: inline-block;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  border: 1px solid;
-  border-radius: 999px;
-  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 12px;
+  padding: 1px 10px;
   margin-right: 4px;
+  background: var(--surface-sunk);
+  color: var(--text-2);
 }
 
 .badge-cp {
-  color: rgb(var(--teal-bright));
-  border-color: rgb(var(--teal) / 45%);
-  background: rgb(var(--teal) / 12%);
-}
-
-.badge-w {
-  color: rgb(var(--text) / 80%);
-  border-color: rgb(var(--hairline) / 18%);
-  background: rgb(var(--surface) / 5%);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
 }
 
 /* Status */
-
 .status-cell {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
-  color: rgb(var(--text) / 70%);
+  font-size: 13px;
+  color: var(--text-2);
   white-space: nowrap;
 }
 
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex: none;
 }
 
 .dot-ok {
-  background: rgb(var(--teal-bright));
-  box-shadow: 0 0 6px rgb(var(--teal-bright) / 60%);
+  background: var(--ok);
+}
+
+.dot-warn {
+  background: var(--warn);
 }
 
 .dot-down {
-  background: rgb(var(--red));
+  background: var(--err);
 }
 
-/* Misc */
+.pill-warn-text {
+  color: var(--warn-text);
+  font-weight: 500;
+}
 
 .empty {
   padding: 24px 16px;
-  color: rgb(var(--text) / 55%);
+  color: var(--text-2);
   font-size: 13px;
 }
 
-/* Marks a card that refreshes itself. Every self-refreshing card carries one,
-   which is what the inconsistent "Live ·" title prefix used to signal on some
-   cards and not others. Animation is decorative: it degrades to a static dot
-   under prefers-reduced-motion, and the dot itself still reads as a marker. */
+/* Marks a card that refreshes itself. Decorative: static under reduced motion. */
 .live-dot {
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 7px;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
   border-radius: 50%;
-  background: rgb(var(--teal-bright));
+  background: var(--ok);
   vertical-align: middle;
   animation: live-pulse 2.4s ease-in-out infinite;
 }
 @keyframes live-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none } }
 
-/* One long value filling a card: the schematic id (64 hex chars) and the
-   kernel command line (~200 chars). Breaks anywhere, so it wraps inside the
-   card instead of scrolling the page sideways. */
+/* One long value filling a card (schematic id, kernel command line): breaks anywhere. */
 .card-text {
   padding: 14px 16px 16px;
   font-size: 12.5px;
   line-height: 1.7;
-  color: rgb(var(--text) / 75%);
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
 .foot {
-  margin-top: 28px;
+  margin-top: 32px;
   font-size: 12px;
-  color: rgb(var(--text) / 35%);
+  color: var(--text-3);
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────── */
+/* ── Node overview: category cards that double as navigation ───────── */
 
-@media (max-width: 900px) {
-  .shell {
-    grid-template-columns: 1fr;
-    /* Short pages would otherwise stretch the strip row to fill the
-       min-height and center the links in dead space; keep the rows at
-       content size and let any slack fall below the page. */
-    align-content: start;
-  }
-
-  /* One horizontally scrollable strip instead of the four side-by-side link
-     columns: the old layout took 290-330px of vertical space (the 7-link
-     Hardware group alone is 256px) before any content on a phone. */
-  .sidebar {
-    position: static;
-    height: auto;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
-    padding: 6px 12px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: none;
-    border-bottom: 1px solid rgb(var(--hairline) / 10%);
-  }
-
-  .sidebar > div {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    flex: none;
-    gap: 2px;
-  }
-
-  .sidebar > div + div {
-    margin-left: 14px;
-    padding-left: 14px;
-    border-left: 1px solid rgb(var(--hairline) / 10%);
-  }
-
-  .sidebar .eyebrow {
-    display: none;
-  }
-
-  .sidebar .nav-link {
-    white-space: nowrap;
-    border-left: none;
-    border-bottom: 2px solid transparent;
-  }
-
-  .sidebar .nav-link.active {
-    border-left-color: transparent;
-    border-bottom-color: rgb(var(--teal));
-  }
-
-  .stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* Large displays: the content column widens and the big numbers step up one
-   notch, so a 2560px monitor is not a 1280px page with more background
-   around it. 1400px still leaves the fleet table comfortable (it needs
-   ~970px for all ten columns), and the wider cell-sub cap below stops long
-   secondary labels wrapping where there is now room. */
-@media (min-width: 1800px) {
-  .page-head h1 {
-    font-size: 22px;
-  }
-
-  .stat-value {
-    font-size: 28px;
-  }
-
-  .stat-value.mono {
-    font-size: 21px;
-  }
-
-  .content {
-    max-width: min(1400px, 100%);
-  }
-
-  .table-fleet .cell-sub {
-    max-width: 22ch;
-  }
-}
-
-.card-sub {
-  font-size: 11.5px;
-  color: rgb(var(--text) / 55%);
-}
-
-/* Node overview: the category cards that double as navigation.
-   .stats-5 exists for a five-card row; the live grid is .stats-6 below. */
-.stats-5 {
-  grid-template-columns: repeat(5, 1fr);
-}
-
-/* 10 category cards with a GPU, 9 without. Five-up fills two rows at 10,
-   and the trailing card's data-fill spans the remainder at 9. The old six-up
-   left four of six slots empty on the second row at every width. */
+.stats-5,
 .stats-6 {
   grid-template-columns: repeat(5, 1fr);
 }
 
 .card-link {
-  display: block;
+  display: flex;
+  flex-direction: column;
   color: inherit;
   text-decoration: none;
+  transition: box-shadow 150ms ease, border-color 150ms ease;
 }
 
 .card-link:hover {
-  border-color: rgb(var(--teal-bright) / 40%);
+  text-decoration: none;
+  border-color: transparent;
+  box-shadow: var(--elevation);
 }
 
 .card-link-body {
+  flex: 1;
   font-size: 12.5px;
-  line-height: 1.5;
-  padding-top: 2px;
-}
-
-.card-link-more {
-  margin-top: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgb(var(--teal-bright));
-}
-
-@media (max-width: 1040px) {
-  .stats-5,
-  .stats-6 {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 700px) {
-  .stats-5,
-  .stats-6 {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  line-height: 1.6;
 }
 
 /* Fill the last row of a stat grid whose card count does not divide the
@@ -743,101 +812,13 @@ table.kv th {
   }
 }
 
-/* Memory breakdown bar: used / cache+buffers / free, summing to total. */
-.mem-bar {
-  display: flex;
-  width: 100%;
-  height: 12px;
-  margin: 16px 16px 10px;
-  width: calc(100% - 32px);
-  border-radius: 6px;
-  overflow: hidden;
-  background: rgb(var(--text) / 8%);
-}
+/* ── Fleet table ─────────────────────────────────────────────────────── */
 
-.mem-seg {
-  display: block;
-  height: 12px;
-}
-
-.mem-used {
-  background: rgb(var(--teal-bright));
-}
-
-.mem-cache {
-  background: rgb(var(--teal) / 65%);
-}
-
-.mem-free {
-  background: rgb(var(--text) / 12%);
-}
-
-.mem-key {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
-  padding: 0 16px 14px;
-  font-size: 11.5px;
-  color: rgb(var(--text) / 62%);
-}
-
-.mem-dot {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  margin-right: 6px;
-  border-radius: 2px;
-  vertical-align: middle;
-}
-
-/* PCI page: one collapsible card per device class. */
-details.card > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-details.card > summary::-webkit-details-marker {
-  display: none;
-}
-
-details.card > summary::after {
-  content: "\203A";
-  margin-left: auto;
-  padding-left: 10px;
-  color: rgb(var(--text) / 40%);
-  transform: rotate(90deg);
-}
-
-details.card[open] > summary::after {
-  transform: rotate(-90deg);
-}
-
-.pill-warn-text {
-  color: rgb(var(--amber));
-}
-
-/* An interface with no carrier stays visible but recedes: it is real
-   configuration, so hiding it would misrepresent the machine. */
-.row-idle td {
-  color: rgb(var(--text) / 45%);
-}
-
-/* Network throughput: direction-coded so a glance reads in versus out. */
-.rate-in {
-  color: rgb(var(--teal-bright));
-}
-
-.rate-out {
-  margin-left: 14px;
-  color: rgb(167 139 250);
-}
-
-/* Fleet table (dashboard): ten narrow columns inside a 1100px content column,
-   so the default 16px cell padding alone would spend 320px. Tighten it, keep
-   identity cells on one line, and let only the long CPU name wrap. */
+/* Ten narrow columns: tighter padding, identity cells on one line, only the
+   long CPU name wraps. */
 .table-fleet th,
 .table-fleet td {
-  padding: 9px 10px;
+  padding: 10px 12px;
   white-space: nowrap;
 }
 
@@ -846,50 +827,50 @@ details.card[open] > summary::after {
   white-space: normal;
 }
 
-.table-fleet .cell-sub {
-  /* Secondary lines are the widest thing in several columns
-     ("coretemp/Package id 0"). Capping them makes the text wrap instead of
-     stretching the column, which is what pushed the row past the content width. */
-  max-width: 14ch;
-  font-size: 11.5px;
+.cell-sub {
+  font-size: 12px;
   line-height: 1.35;
-  color: rgb(var(--text) / 45%);
+  color: var(--text-2);
+}
+
+.table-fleet .cell-sub {
+  /* Capped so long secondary labels wrap instead of stretching the column. */
+  max-width: 14ch;
   overflow-wrap: anywhere;
 }
 
-.table-fleet .cell-bar {
+.cell-bar {
   display: inline-block;
-  width: 46px;
+  width: 48px;
   height: 4px;
+  margin-right: 6px;
   border-radius: 2px;
-  background: rgb(var(--text) / 12%);
+  background: var(--surface-sunk);
   vertical-align: middle;
 }
 
-.table-fleet .cell-bar > span {
+.cell-bar > span {
   display: block;
   height: 4px;
   border-radius: 2px;
-  background: rgb(var(--teal-bright));
+  background: var(--primary);
 }
 
-/* Shed the lowest-value columns before the table starts scrolling. The
-   breakpoints follow the actual budget: content is min(1100, vw - 224) - 56
-   below 1800px (min(1400, vw - 224) - 56 above), the sidebar collapses at
-   900px, and the full table needs ~970px. */
-@media (max-width: 1250px) {
+/* Shed the lowest-value columns before the table starts scrolling. Content is
+   min(1280, vw - 256) - 64 above 900px, and the full table needs ~970px. */
+@media (max-width: 1290px) {
   .table-fleet .col-storage {
     display: none;
   }
 }
 
-@media (max-width: 1150px) {
+@media (max-width: 1190px) {
   .table-fleet .col-temp {
     display: none;
   }
 }
 
-@media (max-width: 1040px) {
+@media (max-width: 1080px) {
   .table-fleet .col-memory {
     display: none;
   }
@@ -901,22 +882,72 @@ details.card[open] > summary::after {
   }
 }
 
-/* Stacked mode bar: one segment per /proc/stat mode, widths summing to 100%.
-   Three tones only — own work, waiting on something else, idle — because the
-   question the bar answers is which of those three a busy node is doing. */
+/* ── Memory, CPU and network visuals ─────────────────────────────────── */
+
+/* Memory breakdown bar: used / cache+buffers / free, summing to total. */
+.mem-bar {
+  display: flex;
+  width: calc(100% - 32px);
+  height: 12px;
+  margin: 16px 16px 10px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-sunk);
+}
+
+.mem-seg {
+  display: block;
+  height: 12px;
+}
+
+.mem-used {
+  background: var(--primary);
+}
+
+.mem-cache {
+  background: color-mix(in srgb, var(--primary) 40%, var(--surface));
+}
+
+.mem-free {
+  background: var(--surface-sunk);
+}
+
+.mem-dot.mem-free {
+  background: var(--outline-strong);
+}
+
+.mem-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 0 16px 14px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.mem-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* Stacked mode bar: own work, waiting on something else, idle. */
 .mode-bar {
   display: flex;
-  height: 22px;
+  height: 24px;
   margin: 16px 16px 10px;
   border-radius: 4px;
   overflow: hidden;
-  background: rgb(var(--surface) / 8%);
+  background: var(--surface-sunk);
 }
 
 .mode-seg { min-width: 1px }
-.mode-busy { background: rgb(var(--teal-bright) / 80%) }
-.mode-wait { background: rgb(var(--amber)) }
-.mode-idle { background: rgb(var(--hairline) / 22%) }
+.mode-busy { background: var(--primary) }
+.mode-wait { background: var(--warn) }
+.mode-idle { background: var(--surface-sunk) }
 
 .mode-legend {
   display: flex;
@@ -924,26 +955,27 @@ details.card[open] > summary::after {
   gap: 6px 16px;
   padding: 0 16px 14px;
   font-size: 12px;
-  color: rgb(var(--text) / 70%);
+  color: var(--text-2);
 }
 
 .mode-key { display: inline-flex; align-items: center; gap: 6px }
 
 .mode-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
   display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
 }
 
-/* Per-core usage grid. Replaces the removed uPlot usage panel: one bar per
-   hardware thread, so it stays readable from 4 cores to 128 without a chart
-   library. Bars grow from the bottom, which is what makes a hot core legible
-   at a glance in a wall of them. */
+.mode-dot.mode-idle {
+  background: var(--outline-strong);
+}
+
+/* Per-core usage grid: one bar per hardware thread, growing from the bottom. */
 .core-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
-  gap: 6px 4px;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 8px 6px;
   padding: 16px;
 }
 
@@ -958,60 +990,385 @@ details.card[open] > summary::after {
   display: flex;
   align-items: flex-end;
   width: 100%;
-  height: 46px;
-  background: rgb(var(--surface) / 8%);
-  border: 1px solid rgb(var(--hairline) / 12%);
-  border-radius: 3px;
+  height: 48px;
+  background: var(--surface-sunk);
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .core-bar > span {
   width: 100%;
   min-height: 1px;
-  background: rgb(var(--teal-bright) / 75%);
+  background: var(--primary);
 }
+
+.core-bar > span.warn { background: var(--warn); }
+.core-bar > span.crit { background: var(--err); }
 
 .core-n {
   font-size: 10px;
-  color: rgb(var(--text) / 45%);
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
 .core-pct {
-  font-size: 10.5px;
-  color: rgb(var(--text) / 80%);
+  font-size: 11px;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
 .core-f {
-  font-size: 9.5px;
-  color: rgb(var(--text) / 40%);
+  font-size: 10px;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
-/* Stale-connection banner. Hidden until app.js sets data-stale on <html>
-   after a failed poll; htmx keeps the last good content, so the page would
-   otherwise look live while frozen. */
+/* An interface with no carrier stays visible but recedes. */
+.row-idle td {
+  color: var(--text-3);
+}
+
+/* Network throughput: direction-coded so a glance reads in versus out. */
+.rate-in {
+  color: var(--primary-text);
+}
+
+.rate-out {
+  margin-left: 14px;
+  color: var(--violet);
+}
+
+/* PCI page: one collapsible card per device class. */
+details.card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.card > summary:hover {
+  background: var(--surface-hover);
+}
+
+details.card > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.card > summary .card-sub {
+  margin-left: auto;
+}
+
+details.card > summary::after {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  background: var(--text-2);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform 150ms ease;
+}
+
+details.card[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+details.card:not([open]) > summary {
+  border-bottom: none;
+}
+
+/* ── Connection state ────────────────────────────────────────────────── */
+
+/* Hidden until app.js sets data-stale on <html> after a failed poll; htmx
+   keeps the last good content, so the page would otherwise look live while frozen. */
 #stale-banner {
   display: none;
-  padding: 7px 16px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: rgb(var(--amber));
-  background: rgb(var(--amber) / 10%);
-  border-bottom: 1px solid rgb(var(--amber) / 25%);
+  padding: 8px 24px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--warn-text);
+  background: var(--warn-container);
+  border-bottom: 1px solid var(--outline);
 }
 
 [data-stale] #stale-banner {
   display: block;
 }
 
-/* Dim the failing region itself, so the banner is not the only cue. The
-   transition lives on the base state so the dim fades both ways. */
+/* Dim the failing region itself, so the banner is not the only cue. */
 [hx-trigger] {
   transition: opacity 200ms ease;
 }
 
 [data-stale]:not(:root) {
-  opacity: 0.65;
+  opacity: 0.6;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 1040px) {
+  .stats-5,
+  .stats-6 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+    align-content: start;
+  }
+
+  /* The drawer becomes one horizontally scrollable strip above the content. */
+  .sidebar {
+    position: static;
+    height: auto;
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--outline);
+  }
+
+  .nav-group {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: 2px;
+  }
+
+  .nav-group + .nav-group {
+    margin: 0 0 0 8px;
+    padding: 0 0 0 8px;
+    border-top: none;
+    border-left: 1px solid var(--outline);
+  }
+
+  .nav-title,
+  .nav-subtitle {
+    display: none;
+  }
+
+  .nav-bottom {
+    margin-top: 0;
+  }
+
+  .sidebar .node-switch {
+    padding: 0 8px 0 0;
+  }
+
+  .sidebar .node-switch select {
+    width: auto;
+    height: 32px;
+  }
+
+  .nav-link .icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+  }
+
+  .nav-link {
+    height: 32px;
+    margin: 0;
+    padding: 0 12px;
+    border-radius: 16px;
+    white-space: nowrap;
+  }
+
+  .content {
+    padding: 16px 16px 32px;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .stats-5,
+  .stats-6 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .topbar {
+    padding-left: 16px;
+  }
+}
+
+/* Large displays: a wider content column and one notch larger numbers. */
+@media (min-width: 1800px) {
+  .content {
+    max-width: min(1600px, 100%);
+  }
+
+  .stat-value {
+    font-size: 32px;
+  }
+
+  .stat-value.mono {
+    font-size: 20px;
+  }
+
+  .table-fleet .cell-sub {
+    max-width: 22ch;
+  }
+}
+
+/* ── Service grid (health page) ──────────────────────────────────────── */
+
+.svc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  padding: 16px;
+}
+
+.svc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+}
+
+.svc-down {
+  border-color: var(--err);
+  background: var(--err-container);
+}
+
+.svc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+td .meter {
+  max-width: 240px;
+  margin-top: 8px;
+}
+
+/* ── Module cards (memory page) ──────────────────────────────────────── */
+
+.dimm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* Key/value rows inside a tile: no card chrome, tight spacing. */
+.kv-compact {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.kv-compact th,
+.kv-compact td {
+  padding: 6px 0;
+}
+
+.kv-compact th {
+  padding-right: 16px;
+}
+
+/* ── Usage rows (filesystems, PersistentVolumes) ─────────────────────── */
+
+.usage-list {
+  padding: 4px 16px 8px;
+}
+
+.usage {
+  padding: 12px 0;
+}
+
+.usage + .usage {
+  border-top: 1px solid var(--outline);
+}
+
+.usage-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.usage .meter {
+  margin: 8px 0 4px;
+}
+
+.tile-badge {
+  margin-left: auto;
+}
+
+.wrap {
+  overflow-wrap: anywhere;
+}
+
+
+/* ── Interface cards (network page) ──────────────────────────────────── */
+
+.if-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.if-idle .stat-value,
+.if-idle .tile-sub {
+  color: var(--text-3);
+}
+
+.if-rates {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 20px;
+}
+
+.if-rates .rate-out {
+  margin-left: 0;
+}
+
+.rate-out-value {
+  color: var(--violet);
+}
+
+/* ── GPU gauges ──────────────────────────────────────────────────────── */
+
+.gpu-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+  padding: 16px;
+}
+
+/* ── Sensor tables ───────────────────────────────────────────────────── */
+
+/* Fixed shares so every kind's table lines its columns up with the others. */
+.sensor-table {
+  table-layout: fixed;
+  min-width: 640px;
+}
+
+.sensor-table th:nth-child(1) { width: 28%; }
+.sensor-table th:nth-child(2) { width: 18%; }
+.sensor-table th:nth-child(3) { width: 16%; }
+
+.sensor-table .reading.warn { color: var(--warn-text); }
+.sensor-table .reading.crit { color: var(--err-text); }
+
+.limit-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.limit-cell .meter {
+  flex: none;
+  width: 120px;
+  margin: 0;
 }

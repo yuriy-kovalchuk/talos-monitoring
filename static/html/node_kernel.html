@@ -1,9 +1,4 @@
 {{define "node_kernel-content"}}
-<div class="page-head">
-  <div class="eyebrow"><a class="crumb" href="/nodes">Nodes</a> / <a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a> / Kernel</div>
-  <h1>Kernel · {{.Node.Name}}</h1>
-</div>
-
 {{template "kernel-live" .}}
 {{end}}
 
@@ -17,20 +12,24 @@
 
 <div class="stats">
   <div class="stat-card">
-    <div class="stat-label">Kernel</div>
-    <div class="stat-value mono">{{if .Identity.KernelVersion}}{{.Identity.KernelVersion}}{{else}}–{{end}}<span class="stat-sub">{{if .Identity.BootedEntry}}{{.Identity.BootedEntry}}{{else}}booted entry unknown{{end}}</span></div>
+    <div class="tile-head">{{template "icon-kernel"}}Kernel</div>
+    <div class="stat-value mono">{{if .Identity.KernelVersion}}{{.Identity.KernelVersion}}{{else}}–{{end}}</div>
+    <div class="tile-sub">{{if .Identity.BootedEntry}}{{.Identity.BootedEntry}}{{else}}booted entry unknown{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Tunables</div>
-    <div class="stat-value">{{len .Kernel.Params}}<span class="stat-sub">{{.Kernel.Drifted}} differ from default</span></div>
+    <div class="tile-head">{{template "icon-kernel"}}Tunables</div>
+    <div class="stat-value">{{len .Kernel.Params}}</div>
+    <div class="tile-sub">{{.Kernel.Drifted}} differ from default</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Unsupported</div>
-    <div class="stat-value{{if not .Kernel.Unsupported}} ok{{end}}">{{.Kernel.Unsupported}}<span class="stat-sub">{{if .Kernel.Unsupported}}silently ignored by this kernel{{else}}every tunable took effect{{end}}</span></div>
+    <div class="tile-head">{{template "icon-about"}}Unsupported</div>
+    <div class="stat-value{{if not .Kernel.Unsupported}} ok{{end}}">{{.Kernel.Unsupported}}</div>
+    <div class="tile-sub">{{if .Kernel.Unsupported}}silently ignored by this kernel{{else}}every tunable took effect{{end}}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Modules</div>
-    <div class="stat-value">{{len .Kernel.Modules}}<span class="stat-sub">loaded</span></div>
+    <div class="tile-head">{{template "icon-pci"}}Modules</div>
+    <div class="stat-value">{{len .Kernel.Modules}}</div>
+    <div class="tile-sub">loaded</div>
   </div>
 </div>
 
@@ -38,7 +37,7 @@
 <div class="card">
   <div class="card-head">
     <span class="eyebrow">Command line</span>
-    <span class="card-sub">a machineconfig kernel argument the kernel ignored is only visible here</span>
+    <span class="card-sub">shows arguments the kernel ignored</span>
   </div>
   <div class="card-text mono">{{.Identity.Cmdline}}</div>
 </div>
@@ -90,8 +89,7 @@
 {{else}}
 <div class="card">
   <div class="card-head"><span class="eyebrow">Kernel</span></div>
-  <div class="empty">No kernel data yet. The <code>kernel</code> collector is disabled, or
-  it has not completed its first scrape.</div>
+  <div class="empty">No kernel data yet: the <code>kernel</code> collector is off or has not run yet.</div>
 </div>
 {{end}}
 </div>

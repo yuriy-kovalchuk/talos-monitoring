@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>talos-monitoring{{with .Title}} · {{.}}{{end}}</title>
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%2302807D" d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>'>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%231A73E8" d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>'>
+{{/* Not deferred: it sets data-theme before the stylesheet paints, so a dark
+     page never flashes white. */}}
+<script src="/static/js/theme.js?v={{.AssetV}}"></script>
 <link rel="stylesheet" href="/static/css/fonts.css?v={{.AssetV}}">
 <link rel="stylesheet" href="/static/css/style.css?v={{.AssetV}}">
 <script src="/static/js/htmx.min.js?v={{.AssetV}}" defer></script>
@@ -18,15 +21,11 @@
 <div id="stale-banner" role="status" aria-live="polite"></div>
 <header class="topbar">
   <a class="brand" href="/">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(2 128 125)" stroke-width="2" aria-hidden="true"><path d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>
+    <svg class="brand-mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20.66 7v10L12 22 3.34 17V7z"/></svg>
     <span>talos-monitoring</span>
     <span class="version-chip">{{.Version}}</span>
   </a>
   <div class="topbar-right">
-    {{/* The node switcher lives in the header so it is reachable from every
-         page, and sits beside the node count it relates to. Rendered only
-         where switching nodes means something. */}}
-    {{if .HWBase}}{{template "node-switch" .}}{{end}}
     {{/* aria-live belongs on a small status element like this one, not on the
          big polled regions: those re-render wholesale, so announcing them
          would read the whole page aloud every 15 s. */}}
@@ -34,50 +33,71 @@
          hx-get="/partials/status" hx-trigger="load, every 30s" hx-swap="outerHTML">
       <span class="pill-dot"></span>checking…
     </div>
-    <a class="btn btn-ghost" href="/metrics">Metrics</a>
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch theme">
+      <svg class="theme-icon ti-system" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm1-17.93c3.94.49 7 3.85 7 7.93s-3.06 7.44-7 7.93V4.07z"/></svg>
+      <svg class="theme-icon ti-light" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM2 13h2a1 1 0 0 0 0-2H2a1 1 0 0 0 0 2zm18 0h2a1 1 0 0 0 0-2h-2a1 1 0 0 0 0 2zM11 2v2a1 1 0 0 0 2 0V2a1 1 0 0 0-2 0zm0 18v2a1 1 0 0 0 2 0v-2a1 1 0 0 0-2 0zM5.99 4.58a1 1 0 0 0-1.41 1.41l1.06 1.06a1 1 0 0 0 1.41-1.41L5.99 4.58zm12.37 12.37a1 1 0 0 0-1.41 1.41l1.06 1.06a1 1 0 0 0 1.41-1.41l-1.06-1.06zm1.06-10.96a1 1 0 0 0-1.41-1.41l-1.06 1.06a1 1 0 0 0 1.41 1.41l1.06-1.06zM7.05 18.36a1 1 0 0 0-1.41-1.41l-1.06 1.06a1 1 0 0 0 1.41 1.41l1.06-1.06z"/></svg>
+      <svg class="theme-icon ti-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
+    </button>
   </div>
 </header>
 <div class="shell">
   <nav class="sidebar" aria-label="Main">
-    <div>
-      <div class="eyebrow">Overview</div>
-      <a class="nav-link{{if eq .Page "overview"}} active{{end}}" href="/">Dashboard</a>
-      <a class="nav-link{{if eq .Page "nodes"}} active{{end}}" href="/nodes">Nodes</a>
+    <div class="nav-group">
+      <div class="nav-title">Cluster</div>
+      <a class="nav-link{{if eq .Page "overview"}} active{{end}}" href="/">{{template "icon-dashboard"}}Dashboard</a>
+      <a class="nav-link{{if eq .Page "nodes"}} active{{end}}" href="/nodes">{{template "icon-nodes"}}Nodes</a>
     </div>
-    <div>
-      <div class="eyebrow">System</div>
+    <div class="nav-group">
       {{if .HWBase}}
-      <a class="nav-link{{if and (eq .Page "node") (eq .Section "")}} active{{end}}" href="{{.HWBase}}">Overview</a>
-      <a class="nav-link{{if eq .Section "health"}} active{{end}}" href="{{.HWBase}}/health">Health</a>
-      <a class="nav-link{{if eq .Section "identity"}} active{{end}}" href="{{.HWBase}}/identity">Image</a>
-      <a class="nav-link{{if eq .Section "kernel"}} active{{end}}" href="{{.HWBase}}/kernel">Kernel</a>
+      {{/* The picker heads the group it drives: changing it keeps the section. */}}
+      <div class="nav-title">Node</div>
+      {{template "node-switch" .}}
+      <div class="nav-subtitle">Monitor</div>
+      <a class="nav-link{{if and (eq .Page "node") (eq .Section "")}} active{{end}}" href="{{.HWBase}}">{{template "icon-overview"}}Overview</a>
+      <a class="nav-link{{if eq .Section "health"}} active{{end}}" href="{{.HWBase}}/health">{{template "icon-health"}}Health</a>
+      <div class="nav-subtitle">Hardware</div>
+      <a class="nav-link{{if eq .Section "cpu"}} active{{end}}" href="{{.HWBase}}/cpu">{{template "icon-cpu"}}CPU</a>
+      <a class="nav-link{{if eq .Section "memory"}} active{{end}}" href="{{.HWBase}}/memory">{{template "icon-memory"}}Memory</a>
+      <a class="nav-link{{if eq .Section "storage"}} active{{end}}" href="{{.HWBase}}/storage">{{template "icon-storage"}}Storage</a>
+      <a class="nav-link{{if eq .Section "links"}} active{{end}}" href="{{.HWBase}}/links">{{template "icon-network"}}Network</a>
+      <a class="nav-link{{if eq .Section "gpu"}} active{{end}}" href="{{.HWBase}}/gpu">{{template "icon-gpu"}}GPU</a>
+      <a class="nav-link{{if eq .Section "sensors"}} active{{end}}" href="{{.HWBase}}/sensors">{{template "icon-sensors"}}Sensors</a>
+      <a class="nav-link{{if eq .Section "pci"}} active{{end}}" href="{{.HWBase}}/pci">{{template "icon-pci"}}PCI</a>
+      <div class="nav-subtitle">Software</div>
+      <a class="nav-link{{if eq .Section "identity"}} active{{end}}" href="{{.HWBase}}/identity">{{template "icon-image"}}Image</a>
+      <a class="nav-link{{if eq .Section "kernel"}} active{{end}}" href="{{.HWBase}}/kernel">{{template "icon-kernel"}}Kernel</a>
       {{else}}
+      <div class="nav-title">Node</div>
       <div class="nav-muted">no nodes discovered</div>
       {{end}}
     </div>
-    <div>
-      <div class="eyebrow">Hardware</div>
-      {{if .HWBase}}
-      <a class="nav-link{{if eq .Section "cpu"}} active{{end}}" href="{{.HWBase}}/cpu">CPU</a>
-      <a class="nav-link{{if eq .Section "memory"}} active{{end}}" href="{{.HWBase}}/memory">Memory</a>
-      <a class="nav-link{{if eq .Section "storage"}} active{{end}}" href="{{.HWBase}}/storage">Storage</a>
-      <a class="nav-link{{if eq .Section "links"}} active{{end}}" href="{{.HWBase}}/links">Network</a>
-      <a class="nav-link{{if eq .Section "gpu"}} active{{end}}" href="{{.HWBase}}/gpu">GPU</a>
-      <a class="nav-link{{if eq .Section "pci"}} active{{end}}" href="{{.HWBase}}/pci">PCI</a>
-      <a class="nav-link{{if eq .Section "sensors"}} active{{end}}" href="{{.HWBase}}/sensors">Sensors</a>
-      {{else}}
-      <div class="nav-muted">no nodes discovered</div>
-      {{end}}
-    </div>
-    <div>
-      <div class="eyebrow">Exporter</div>
-      <a class="nav-link{{if eq .Page "about"}} active{{end}}" href="/about">About</a>
+    <div class="nav-group nav-bottom">
+      <a class="nav-link" href="/metrics">{{template "icon-metrics"}}Metrics</a>
+      <a class="nav-link{{if eq .Page "about"}} active{{end}}" href="/about">{{template "icon-about"}}About</a>
     </div>
   </nav>
   <main class="content">
+    {{if .Node}}{{template "node-head" .}}{{end}}
     {{.Inner}}
     <footer class="foot">talos-monitoring {{.Version}} · commit {{.Commit}} · built {{.BuildDate}}</footer>
   </main>
 </div>
 </body>
 </html>{{end}}
+
+{{/* The resource header every node page shares: where you are, and the node's
+     static identity. Nothing here moves while the page is open, so it is not
+     polled; live status sits in the page body and the top bar. */}}
+{{define "node-head"}}
+<div class="page-head">
+  <nav class="crumbs" aria-label="Breadcrumb"><a class="crumb" href="/nodes">Nodes</a><span class="crumb-sep">›</span>{{if .Section}}<a class="crumb" href="/nodes/{{.Node.Name}}">{{.Node.Name}}</a>{{else}}<span>{{.Node.Name}}</span>{{end}}</nav>
+  <h1>{{.SectionLabel}}{{if .Section}} <span class="h1-sub">· {{.Node.Name}}</span>{{end}}</h1>
+  <div class="resource-meta">
+    {{range .Node.Roles}}<span class="badge {{badgeClass .}}">{{.}}</span>{{end}}
+    <span class="mono">{{fallback .Node.IP "–"}}</span>
+    <span>Talos <span class="mono">{{fallback .Node.TalosVersion "–"}}</span></span>
+    <span>Kubernetes <span class="mono">{{fallback .Node.KubeVersion "–"}}</span></span>
+    {{if .Node.OS}}<span class="mono">{{.Node.OS}}/{{.Node.Arch}}</span>{{end}}
+  </div>
+</div>
+{{end}}

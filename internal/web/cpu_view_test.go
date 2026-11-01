@@ -49,7 +49,9 @@ func TestNodeDetailCPU(t *testing.T) {
 	// The charts are gone; the page carries a per-core usage grid and a
 	// frequency table instead.
 	checkBody(t, body, `id="cpu-live"`, "core-grid", "core-bar", "CPU usage", "Per core",
-		"37.5%", "Load average", "Processes")
+		">37.5<", "Load average", "Run queue")
+	// The usage card totals every socket; it used to read 0, its summary never loaded on this page.
+	checkBody(t, body, "48 cores / 96 threads")
 	if strings.Contains(body, "uplot") || strings.Contains(body, "cpu-graph") {
 		t.Error("chart markup survived the uPlot removal")
 	}
@@ -121,7 +123,7 @@ func TestNodeDetailStatus(t *testing.T) {
 		t.Fatalf("/nodes/node-1: got status %d, want 200", rec.Code)
 	}
 	// Machine card: versions in one place, boot time, processes.
-	checkBody(t, body, "v1.13.4", "abc123", "1d 1h1m", "7 running · 3 blocked")
+	checkBody(t, body, "v1.13.4", "abc123", "1d 1h1m", "7 runnable · 3 blocked")
 	// Health strip: live CPU.
 
 	if strings.Contains(body, "Per-core usage") {
@@ -169,7 +171,7 @@ func TestNodeDetailStatus(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/nodes/node-1/cpu: got status %d, want 200", rec.Code)
 	}
-	checkBody(t, body, "governor performance", "400 – 5000 MHz", "cores reporting")
+	checkBody(t, body, "performance", "400 – 5000 MHz")
 	if strings.Contains(body, "Per-core usage") {
 		t.Error("per-core usage table should be gone; the graphs carry that data")
 	}
