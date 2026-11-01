@@ -3,8 +3,8 @@
 #   helm install talos-monitoring ./charts/talos-monitoring \
 #     --namespace talos-monitoring --create-namespace
 #
-# Before the pod can talk to the nodes, every node's machineconfig needs
-# machine.features/kubernetesTalosAPIAccess — see README > Prerequisites.
+# Before the pod can talk to the nodes, every node's machineconfig needs a
+# KubeTalosAPIAccessConfig document — see README > Prerequisites.
 
 image:
   # Registry prefix incl. trailing slash: GHCR by default.
@@ -119,11 +119,12 @@ collectors:
 # talosconfig with a 6 h client certificate, auto-renewed; the pod mounts it
 # and the client pool rebuilds on rotation. No long-lived admin cert in the pod.
 #
-# Node prerequisite (machineconfig of every node):
-#   machine.features/kubernetesTalosAPIAccess:
-#     enabled: true
-#     allowedRoles: [os:reader]       # must cover every role below
-#     allowedKubernetesNamespaces: [<release namespace>]
+# Node prerequisite (machineconfig of every node; older Talos uses the
+# deprecated machine.features.kubernetesTalosAPIAccess instead):
+#   apiVersion: v1alpha1
+#   kind: KubeTalosAPIAccessConfig
+#   allowedRoles: [os:reader]         # must cover every role below
+#   allowedKubernetesNamespaces: [<release namespace>]
 
 talos:
   # Roles for the Talos service account. os:reader covers every COSI/machine-API

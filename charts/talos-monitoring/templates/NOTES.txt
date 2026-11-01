@@ -1,9 +1,9 @@
 talos-monitoring {{ .Chart.Version }} is installed in namespace {{ .Release.Namespace }}.
 
-1. Check the prerequisite first. Every node's machineconfig needs
-   machine.features/kubernetesTalosAPIAccess enabled, with allowedRoles
-   covering {{ .Values.talos.roles | join ", " }} and allowedKubernetesNamespaces
-   including "{{ .Release.Namespace }}" (see README > Prerequisites).
+1. Check the prerequisite first. Every node's machineconfig needs a
+   KubeTalosAPIAccessConfig document (machine.features.kubernetesTalosAPIAccess
+   on older Talos), with allowedRoles covering {{ .Values.talos.roles | join ", " }}
+   and allowedKubernetesNamespaces including "{{ .Release.Namespace }}" (see README > Prerequisites).
    Until then the pod stays 0/1 Ready and logs "talosconfig unavailable,
    retrying" — that is expected, not a crash.
 

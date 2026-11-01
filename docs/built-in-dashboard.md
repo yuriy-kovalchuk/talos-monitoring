@@ -2,11 +2,11 @@
 
 A look at the built-in htmx dashboard (`http://<host>:8080/`). It reports
 current state plus a short in-memory history. Samples like the CPU
-frequency range are kept in RAM for the last **10 minutes** only (see
-`internal/history`), enough to smooth out a live reading without hammering
+frequency range are kept in RAM for the last **10 minutes** by default
+(`--history.window`, Helm `scrape.historyWindow`), enough to smooth out a live reading without hammering
 `/metrics`. There are no long-range charts in this UI by design.
 
-For persistent, long-term metrics history beyond 10 minutes, trends, and
+For persistent, long-term metrics history beyond that window, trends, and
 alerting, use the Grafana dashboards that ship with the Helm chart,
 scraping `/metrics`. Screenshots of those are in
 [`grafana-dashboards.md`](grafana-dashboards.md).
@@ -37,7 +37,8 @@ hardware/health category.
 
 ## Health
 
-Machine stage, service health, clock sync, and per-service state.
+Machine stage, service health, clock sync, per-service state, and etcd
+leader, quorum and alarms on control-plane nodes.
 
 ![Node health](assets/node-health.png)
 
