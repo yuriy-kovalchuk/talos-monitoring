@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-01
+
 ### Added
 - **etcd collector** for control-plane members, through the Talos API (`os:reader` is enough, no etcd metrics listener): leader and quorum (`talos_etcd_has_leader`, `talos_etcd_is_leader`), raft term and apply progress, database size and in-use bytes, member count, learner state, and `NOSPACE`/`CORRUPT` alarms exported 0/1 so alerts never arm on absent data. Workers are never queried and carry no etcd series. The node health page shows an etcd card on control planes. Toggle with `--collectors.etcd.enabled` / Helm `collectors.etcd.enabled`
 - **GPU identity without `os:admin`**: every display-class PCI device is reported from the COSI inventory, with its DRM card and the driver bound *now* resolved from `LS` symlink targets. `talos_gpu_info` and `talos_gpus` exist on `os:reader`; only utilisation and VRAM still need file reads
@@ -78,6 +80,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - Initial public release: an agentless Prometheus exporter and htmx dashboard for Talos node hardware, with a Helm chart
 
-[Unreleased]: https://github.com/yuriy-kovalchuk/talos-monitoring/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/yuriy-kovalchuk/talos-monitoring/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yuriy-kovalchuk/talos-monitoring/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/yuriy-kovalchuk/talos-monitoring/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yuriy-kovalchuk/talos-monitoring/releases/tag/v0.1.0

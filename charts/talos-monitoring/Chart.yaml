@@ -8,8 +8,8 @@ type: application
 # version and appVersion are the release, without the tag's v: bumped together in the
 # release-prep commit, and CD refuses a vX.Y.Z tag they do not match (README "Releasing").
 # appVersion doubles as the default image tag (templates/_helpers.tpl); releases push :X.Y.Z.
-version: 0.1.1
-appVersion: "0.1.1"
+version: 0.2.0
+appVersion: "0.2.0"
 kubeVersion: ">=1.28.0-0"
 keywords:
   - talos
