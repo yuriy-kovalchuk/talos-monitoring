@@ -227,6 +227,30 @@ func TestCollectExportsLinkStateAndAddresses(t *testing.T) {
 	}
 }
 
+// WireGuard and other carrier-less links report operstate "unknown" forever;
+// the kernel's verdict for those is the UP and LOWER_UP flags, as ip link shows.
+func TestUnknownOperStateLinkIsUpWhenFlagsSayTraffic(t *testing.T) {
+	tunnel := link("wg0", "wireguard", false, 0, 1420)
+	tunnel.(*talosnet.LinkStatus).TypedSpec().OperationalState = nethelpers.OperStateUnknown
+	tunnel.(*talosnet.LinkStatus).TypedSpec().Flags = nethelpers.LinkFlags(nethelpers.LinkUp | nethelpers.LinkLowerUp)
+	idle := link("wg1", "wireguard", false, 0, 1420)
+	idle.(*talosnet.LinkStatus).TypedSpec().OperationalState = nethelpers.OperStateUnknown
+	idle.(*talosnet.LinkStatus).TypedSpec().Flags = nethelpers.LinkFlags(nethelpers.LinkUp)
+	e := newNetEnv(t, []resource.Resource{tunnel, idle}, nil, twoScrapeDev)
+	fams := e.collect(t)
+
+	for name, want := range map[string]float64{"wg0": 1, "wg1": 0} {
+		if v, ok := sample(t, fams, "talos_net_link_up", map[string]string{"link": name}); !ok || v != want {
+			t.Errorf("%s link_up = %v (found=%v), want %v", name, v, ok, want)
+		}
+	}
+	for _, l := range e.snap.Node("node-1").Links {
+		if l.Name == "wg0" && !l.Up {
+			t.Error("snapshot reports the live tunnel as down")
+		}
+	}
+}
+
 // A bond's counters already include its slaves', so anything that adds up a
 // node's throughput has to know which interfaces are slaves. LinkStatus relates
 // them by interface index; the exporter resolves that to a name so both the

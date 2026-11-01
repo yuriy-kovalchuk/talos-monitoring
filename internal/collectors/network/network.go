@@ -27,6 +27,15 @@ var keptKinds = map[string]bool{
 	"bond": true, "bridge": true, "vlan": true, "wireguard": true,
 }
 
+// linkUp is the kernel's verdict: operstate up, or "unknown" (WireGuard and other carrier-less links) with UP and LOWER_UP set.
+func linkUp(spec *talosnet.LinkStatusSpec) bool {
+	if spec.OperationalState == nethelpers.OperStateUp {
+		return true
+	}
+	live := nethelpers.LinkFlags(nethelpers.LinkUp | nethelpers.LinkLowerUp)
+	return spec.OperationalState == nethelpers.OperStateUnknown && spec.Flags&live == live
+}
+
 // speedUnknown is the kernel's no-carrier sentinel; exporting it would plot 4294967295 Mbit/s.
 const speedUnknown = 4294967295
 
@@ -83,7 +92,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		"firmware_version", "bus_path", "pci_id", "vendor", "product", "port", "duplex"})
 	up := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_net_link_up",
-		Help: "1 when the interface's operational state is up.",
+		Help: "1 when the interface passes traffic: operational state up, or unknown (WireGuard and other carrier-less links) with the UP and LOWER_UP flags set.",
 	}, []string{"node", "link"})
 	carrier := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_net_link_carrier",
@@ -138,7 +147,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 			spec.Driver, spec.DriverVersion, spec.FirmwareVersion, spec.BusPath, spec.PCIID,
 			spec.Vendor, spec.Product, spec.Port.String(), spec.Duplex.String()).Set(1)
 
-		up.WithLabelValues(name, id).Set(collector.BoolValue(spec.OperationalState == nethelpers.OperStateUp))
+		up.WithLabelValues(name, id).Set(collector.BoolValue(linkUp(spec)))
 		carrier.WithLabelValues(name, id).Set(collector.BoolValue(spec.LinkState))
 		mtu.WithLabelValues(name, id).Set(float64(spec.MTU))
 		sl := snapshot.Link{
@@ -156,7 +165,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 			Product:         spec.Product,
 			Port:            spec.Port.String(),
 			Duplex:          spec.Duplex.String(),
-			Up:              spec.OperationalState == nethelpers.OperStateUp,
+			Up:              linkUp(spec),
 			Carrier:         spec.LinkState,
 			MTUBytes:        float64(spec.MTU),
 		}
