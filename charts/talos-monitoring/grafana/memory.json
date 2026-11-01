@@ -35,7 +35,7 @@
       "id": 1,
       "type": "stat",
       "title": "In use",
-      "description": "Against MemAvailable, not MemFree: free counts only memory nobody is holding.",
+      "description": "Against MemAvailable, not MemFree: free counts only memory nobody is holding. Total minus MemAvailable: what is not reclaimable. The built-in dashboard's used figure follows free(1) and excludes page cache too, so it reads a little lower.",
       "datasource": null,
       "gridPos": {
         "h": 4,
@@ -343,12 +343,22 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max(talos_node_memory_committed_bytes{node=\"$node\"}) / max(talos_node_memory_commit_limit_bytes{node=\"$node\"}) * 100",
+          "expr": "max(talos_node_memory_committed_bytes{node=\"$node\"})",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "of limit",
+          "legendFormat": "committed",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": null,
+          "editorMode": "code",
+          "expr": "max(talos_node_memory_commit_limit_bytes{node=\"$node\"})",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "limit (overcommit=2 only)",
+          "range": true,
+          "refId": "B"
         }
       ],
       "options": {
@@ -371,7 +381,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "mappings": [],
           "thresholds": {
@@ -383,7 +394,7 @@
               }
             ]
           },
-          "unit": "percent",
+          "unit": "bytes",
           "decimals": 0
         },
         "overrides": []
@@ -805,7 +816,7 @@
       "description": "Memory the kernel holds for itself. Slab that grows and never returns is a leak.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 8,
         "x": 0,
         "y": 17
@@ -927,7 +938,7 @@
       "description": "A sustained dirty plateau means the writeback path is the bottleneck, not memory.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 8,
         "x": 8,
         "y": 17
@@ -1045,7 +1056,7 @@
       "description": "File-backed pages mapped into address spaces, and tmpfs/shmem.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 8,
         "x": 16,
         "y": 17
@@ -1147,7 +1158,7 @@
       "description": "Memory promised against the overcommit ceiling, which moves with policy and swap.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 12,
         "x": 0,
         "y": 24
@@ -1279,7 +1290,7 @@
       "description": "Flat at zero on a stock Talos node. Movement here changes kubelet memory accounting.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 12,
         "x": 12,
         "y": 24

@@ -504,7 +504,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (bdf) (talos_hw_pcidevice_link_speed_transfers_per_second{node=\"$node\"})",
+          "expr": "max by (bdf) (talos_hw_pcidevice_link_speed_transfers_per_second{node=\"$node\"}) / 1e9",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -514,7 +514,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (bdf) (talos_hw_pcidevice_link_max_speed_transfers_per_second{node=\"$node\"})",
+          "expr": "max by (bdf) (talos_hw_pcidevice_link_max_speed_transfers_per_second{node=\"$node\"}) / 1e9",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -695,7 +695,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "suffix: T/s"
+                "value": "suffix: GT/s"
               }
             ]
           },
@@ -707,7 +707,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "suffix: T/s"
+                "value": "suffix: GT/s"
               }
             ]
           },
@@ -920,7 +920,7 @@
         "maxVizHeight": 300,
         "minVizHeight": 16,
         "minVizWidth": 8,
-        "namePlacement": "auto",
+        "namePlacement": "left",
         "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
@@ -1180,7 +1180,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (bdf, class, subclass, vendor, product, driver, vendor_id, product_id, revision, subsystem_vendor_id, subsystem_product_id) (talos_hw_pcidevice_info{node=\"$node\"})",
+          "expr": "label_join(label_join(max by (bdf, class, subclass, vendor, product, driver, vendor_id, product_id, revision, subsystem_vendor_id, subsystem_product_id) (talos_hw_pcidevice_info{node=\"$node\"}), \"pci_id\", \":\", \"vendor_id\", \"product_id\"), \"subsys_id\", \":\", \"subsystem_vendor_id\", \"subsystem_product_id\")",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1255,7 +1255,11 @@
               "Value #A": true,
               "Value #C": true,
               "Value #D": true,
-              "Value #E": true
+              "Value #E": true,
+              "vendor_id": true,
+              "product_id": true,
+              "subsystem_vendor_id": true,
+              "subsystem_product_id": true
             },
             "includeByName": {},
             "renameByName": {
@@ -1269,11 +1273,9 @@
               "state": "Power",
               "irq": "IRQ",
               "numa_node": "NUMA",
-              "vendor_id": "Vendor ID",
-              "product_id": "Device ID",
               "revision": "Rev",
-              "subsystem_vendor_id": "Subsys vendor",
-              "subsystem_product_id": "Subsys device"
+              "pci_id": "PCI ID",
+              "subsys_id": "Subsystem ID"
             },
             "indexByName": {
               "bdf": 0,
@@ -1286,11 +1288,7 @@
               "state": 7,
               "irq": 8,
               "numa_node": 9,
-              "vendor_id": 10,
-              "product_id": 11,
-              "revision": 12,
-              "subsystem_vendor_id": 13,
-              "subsystem_product_id": 14
+              "revision": 12
             }
           }
         }
@@ -1396,8 +1394,15 @@
                         "text": "no",
                         "color": "orange",
                         "index": 0
-                      },
-                      "1": {
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 1,
+                      "to": null,
+                      "result": {
                         "text": "yes",
                         "color": "green",
                         "index": 1

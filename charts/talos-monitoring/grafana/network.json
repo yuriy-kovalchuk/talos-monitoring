@@ -128,10 +128,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(max by (link) (rate(talos_net_link_rx_bytes_total{node=\"$node\"}[$__rate_interval])))",
+          "expr": "sum(max by (link) (rate(talos_net_link_rx_bytes_total{node=\"$node\"}[$__rate_interval])) * on (link) group_left () max by (link) (talos_net_link_info{node=\"$node\", kind=\"\"})) * 8",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "all links",
+          "legendFormat": "physical NICs",
           "range": true,
           "refId": "A"
         }
@@ -168,7 +168,7 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "bps"
         },
         "overrides": []
       }
@@ -189,10 +189,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(max by (link) (rate(talos_net_link_tx_bytes_total{node=\"$node\"}[$__rate_interval])))",
+          "expr": "sum(max by (link) (rate(talos_net_link_tx_bytes_total{node=\"$node\"}[$__rate_interval])) * on (link) group_left () max by (link) (talos_net_link_info{node=\"$node\", kind=\"\"})) * 8",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "all links",
+          "legendFormat": "physical NICs",
           "range": true,
           "refId": "A"
         }
@@ -229,7 +229,7 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "bps"
         },
         "overrides": []
       }
@@ -466,7 +466,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (link) (rate(talos_net_link_rx_bytes_total{node=\"$node\"}[$__rate_interval]))",
+          "expr": "max by (link) (rate(talos_net_link_rx_bytes_total{node=\"$node\"}[$__rate_interval])) * 8",
           "format": "time_series",
           "instant": false,
           "legendFormat": "in · {{link}}",
@@ -476,7 +476,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "- max by (link) (rate(talos_net_link_tx_bytes_total{node=\"$node\"}[$__rate_interval]))",
+          "expr": "- max by (link) (rate(talos_net_link_tx_bytes_total{node=\"$node\"}[$__rate_interval])) * 8",
           "format": "time_series",
           "instant": false,
           "legendFormat": "out · {{link}}",
@@ -486,11 +486,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -546,7 +543,7 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "bps"
         },
         "overrides": []
       }
@@ -587,11 +584,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -688,11 +682,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -796,11 +787,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1030,7 +1018,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (link) (talos_net_link_rx_bytes_per_second{node=\"$node\"})",
+          "expr": "max by (link) (talos_net_link_rx_bytes_per_second{node=\"$node\"}) * 8",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1040,7 +1028,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (link) (talos_net_link_tx_bytes_per_second{node=\"$node\"})",
+          "expr": "max by (link) (talos_net_link_tx_bytes_per_second{node=\"$node\"}) * 8",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1278,7 +1266,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "bytes"
+                "value": "none"
               },
               {
                 "id": "decimals",
@@ -1294,7 +1282,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "Bps"
+                "value": "bps"
               }
             ]
           },
@@ -1306,7 +1294,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "Bps"
+                "value": "bps"
               }
             ]
           },
@@ -1466,7 +1454,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum by (link) (max by (link) (rate(talos_net_link_rx_bytes_total{node=\"$node\"}[$__rate_interval])) + max by (link) (rate(talos_net_link_tx_bytes_total{node=\"$node\"}[$__rate_interval])))",
+          "expr": "sum by (link) (max by (link) (rate(talos_net_link_rx_bytes_total{node=\"$node\"}[$__rate_interval])) + max by (link) (rate(talos_net_link_tx_bytes_total{node=\"$node\"}[$__rate_interval]))) * 8",
           "format": "time_series",
           "instant": true,
           "legendFormat": "{{link}}",
@@ -1511,7 +1499,7 @@
               }
             ]
           },
-          "unit": "Bps",
+          "unit": "bps",
           "min": 0
         },
         "overrides": []

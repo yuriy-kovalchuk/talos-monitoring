@@ -543,11 +543,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -644,11 +641,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -716,7 +710,7 @@
       "description": "Share of time the device had a request in flight. On NVMe, queue depth is the better saturation signal.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 0,
         "y": 13
@@ -725,7 +719,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (device) (rate(talos_block_io_time_seconds_total{node=\"$node\"}[$__rate_interval])) * on (device) group_left () max by (device) (talos_block_io_info{node=\"$node\", kind=\"disk\"}) * 100",
+          "expr": "clamp_max(max by (device) (rate(talos_block_io_time_seconds_total{node=\"$node\"}[$__rate_interval])) * on (device) group_left () max by (device) (talos_block_io_info{node=\"$node\", kind=\"disk\"}) * 100, 100)",
           "format": "time_series",
           "instant": false,
           "legendFormat": "{{device}}",
@@ -805,7 +799,8 @@
           },
           "unit": "percent",
           "decimals": 0,
-          "min": 0
+          "min": 0,
+          "max": 100
         },
         "overrides": []
       }
@@ -817,7 +812,7 @@
       "description": "Mean requests in flight. This is what tells you an NVMe device is saturated.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 8,
         "y": 13
@@ -910,7 +905,7 @@
       "description": "Average service time per request.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 16,
         "y": 13
@@ -939,11 +934,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1468,6 +1460,24 @@
               "bus_path": 12
             }
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "exclude",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "Attachment",
+                "config": {
+                  "id": "equal",
+                  "options": {
+                    "value": "virtual"
+                  }
+                }
+              }
+            ]
+          }
         }
       ],
       "options": {
@@ -1568,13 +1578,13 @@
                     "type": "value",
                     "options": {
                       "0": {
-                        "text": "SSD",
+                        "text": "no",
                         "color": "text",
                         "index": 0
                       },
                       "1": {
-                        "text": "spinning",
-                        "color": "blue",
+                        "text": "yes",
+                        "color": "text",
                         "index": 1
                       }
                     }
@@ -2383,6 +2393,33 @@
               "location": 8
             }
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "exclude",
+            "match": "all",
+            "filters": [
+              {
+                "fieldName": "Type",
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "directory|overlay|symlink"
+                  }
+                }
+              },
+              {
+                "fieldName": "Ready",
+                "config": {
+                  "id": "equal",
+                  "options": {
+                    "value": 1
+                  }
+                }
+              }
+            ]
+          }
         }
       ],
       "options": {
@@ -2728,12 +2765,12 @@
                     "options": {
                       "0": {
                         "text": "no",
-                        "color": "orange",
+                        "color": "text",
                         "index": 0
                       },
                       "1": {
                         "text": "yes",
-                        "color": "green",
+                        "color": "text",
                         "index": 1
                       }
                     }

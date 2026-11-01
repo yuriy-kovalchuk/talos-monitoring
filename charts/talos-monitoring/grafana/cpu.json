@@ -389,7 +389,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Processes",
+      "title": "Run queue",
       "description": "Runnable and uninterruptible-sleep process counts.",
       "datasource": null,
       "gridPos": {
@@ -405,7 +405,7 @@
           "expr": "max(talos_node_processes{node=\"$node\", state=\"running\"})",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "running",
+          "legendFormat": "runnable",
           "range": true,
           "refId": "A"
         },
@@ -477,7 +477,7 @@
       "description": "The node as one line, to read against the per-mode split beside it.",
       "datasource": null,
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 0,
         "y": 5
@@ -587,7 +587,7 @@
       "description": "Every /proc/stat mode as a share of the interval. Idle is excluded — at 98% it flattens the rest.",
       "datasource": null,
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 12,
         "y": 5
@@ -606,11 +606,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -680,7 +677,7 @@
       "description": "The three kernel windows. 1m above 15m is load arriving; the reverse is load draining.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 0,
         "y": 13
@@ -793,7 +790,7 @@
       "description": "Per-core clock. Sampled first in each scrape, before the scrape's own load biases it high.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 8,
         "y": 13
@@ -879,11 +876,11 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Processes",
+      "title": "Run queue",
       "description": "Runnable against uninterruptible-sleep. Blocked processes inflate load without using CPU.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 16,
         "y": 13
@@ -895,7 +892,7 @@
           "expr": "max(talos_node_processes{node=\"$node\", state=\"running\"})",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "running",
+          "legendFormat": "runnable",
           "range": true,
           "refId": "A"
         },
@@ -1014,7 +1011,7 @@
       "description": "Every core's usage, busiest first. One tall bar in a flat field is a single-threaded process.",
       "datasource": null,
       "gridPos": {
-        "h": 9,
+        "h": 14,
         "w": 9,
         "x": 0,
         "y": 21
@@ -1091,7 +1088,7 @@
       "description": "Per core: usage, the clock it is running at, and the ceiling the governor allows.",
       "datasource": null,
       "gridPos": {
-        "h": 9,
+        "h": 14,
         "w": 15,
         "x": 9,
         "y": 21
@@ -1192,12 +1189,29 @@
               "governor": 5
             }
           }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Core",
+                "destinationType": "number"
+              }
+            ],
+            "fields": {}
+          }
         }
       ],
       "options": {
         "cellHeight": "sm",
         "showHeader": true,
-        "sortBy": [],
+        "sortBy": [
+          {
+            "displayName": "Core",
+            "desc": false
+          }
+        ],
         "footer": {
           "show": false,
           "reducer": [
