@@ -4,110 +4,67 @@ A Prometheus exporter and htmx dashboard for [Talos Linux](https://www.talos.dev
 node hardware and OS health. One pod, no DaemonSet, nothing installed on the
 node.
 
-## The problem
-
-Talos nodes have no shell, no package manager, and nothing you can install on
-the node — the OS is immutable and API-first by design. That rules out the
-usual node-exporter model of a privileged DaemonSet reading `/proc` and `/sys`
-on every node directly.
-
-It also means most Talos fleets are missing signals node_exporter never had in
-the first place: per-DIMM and per-socket inventory, PCI device inventory, Talos
-service health, boot stage and readiness, volume encryption state, kernel
-parameters vs. their defaults. On hardware with no BMC/IPMI — common on
-mini-PCs and homelab gear — the OS is the only management interface there is,
-and node_exporter can't reach it from outside the node.
-
-## Why one pod, not a DaemonSet
-
-Talos already exposes a gRPC machine API on every node (COSI resources plus
-limited file reads), the same API `talosctl` uses from an operator's laptop,
-authenticated in-cluster via a Kubernetes-native ServiceAccount mechanism.
-Nothing has to run *on* the node to read it — one pod dials every node's API
-directly (one client per node IP, `client.WithNode(ctx, ip)`).
-
-So: a single Deployment, no privileged pod, no agent or `talosctl` binary to
-install or upgrade per node.
+Talos has no shell and nothing you can install on the node, so the usual
+privileged node-exporter DaemonSet is out. But every node already serves a gRPC
+machine API (the one `talosctl` uses), so a single Deployment dials each node's
+API directly and reads it in-cluster through a Talos ServiceAccount. That
+also reaches what node_exporter never had: per-DIMM and per-socket inventory,
+PCI devices, Talos service health, boot stage, volume encryption, and kernel
+parameters vs. their defaults.
 
 ## Design
 
-```
-Kubernetes API ──► node discovery ──► Talos API (per node, gRPC) ──► collectors
-                                                                         │
-                                                     ┌───────────────────┴───────────────────┐
-                                                     ▼                                       ▼
-                                        Prometheus sub-registry                     typed snapshot store
-                                                     │                                       │
-                                                     ▼                                       ▼
-                                                /metrics                            htmx dashboard (/)
+```mermaid
+flowchart LR
+    K[Kubernetes API] --> D[node discovery] --> T["Talos API<br/>(per node, gRPC)"] --> C[collectors]
+    C --> R[Prometheus sub-registry] --> M["/metrics"]
+    C --> S[typed snapshot store] --> H["htmx dashboard (/)"]
 ```
 
-- A scheduler polls each collector on its own TTL (seconds for live data, an
-  hour for inventory that rarely changes) and writes into both an exposition
-  registry and an in-memory snapshot.
-- `/metrics` and the dashboard are pure viewers of that state — reading either
-  one never triggers a Talos API call.
-- Read-only: the app only ever reads node state, never changes it.
-
-Every exported metric is documented in [`docs/METRICS.md`](docs/METRICS.md).
+A scheduler polls each collector on its own TTL (seconds for live data, an hour
+for inventory) and writes both outputs. `/metrics` and the dashboard only read
+that state, so neither triggers a Talos API call, and the app never changes
+node state.
 
 ## Prerequisites
 
-### 1. Enable in-cluster Talos API access (all nodes)
-
-The monitor authenticates to the Talos API in-cluster using Talos' built-in
-service-account mechanism, which requires Talos API access for in-cluster apps
-to be enabled in the machine configuration of **every node**:
+Enable in-cluster Talos API access on **every node** by adding this document to
+the machine config (e.g. `talosctl patch machineconfig --patch @talos-api-access.yaml`):
 
 ```yaml
-machine:
-  features:
-    kubernetesTalosAPIAccess:
-      enabled: true
-      allowedRoles:
-        - os:reader           # roles the app may request (see note below)
-      allowedKubernetesNamespaces:
-        - talos-monitoring    # the namespace the app is deployed into
+apiVersion: v1alpha1
+kind: KubeTalosAPIAccessConfig
+allowedRoles:
+  - os:reader
+allowedKubernetesNamespaces:
+  - talos-monitoring   # the app's namespace
 ```
 
-Apply it to the cluster, e.g.:
+Older Talos versions use the deprecated `machine.features.kubernetesTalosAPIAccess`
+block instead (`enabled: true` plus the same two lists); set one or the other,
+not both.
 
-```console
-$ talosctl patch machineconfig <<'EOF'
-- op: add
-  path: /machine/features/kubernetesTalosAPIAccess
-  value:
-    enabled: true
-    allowedRoles: [os:reader]
-    allowedKubernetesNamespaces: [talos-monitoring]
-EOF
-```
+The Helm chart creates the `talos.dev/v1alpha1` ServiceAccount; Talos turns it
+into a Secret with a short-lived (6 h, auto-renewed) client certificate, which
+the pod mounts as `TALOSCONFIG`.
 
-If Talos is installed via the [siderolabs/talos Helm chart](https://github.com/siderolabs/talos-charts),
-put the same block under the chart's `machine.features` values instead (or in
-addition), so the setting survives machine configuration regeneration.
+> **Roles:** `os:reader` is enough for everything except what reads node files
+> (sensors, GPU counters, PCI sysfs enrichment, the per-core CPU frequency
+> fallback), which needs `os:admin`; without it those reads pause and re-probe every 5
+> minutes, so granting the role later needs no restart. To enable them, set
+> Helm `talos.roles` and `allowedRoles` above to `[os:admin]` — the app stays
+> read-only, but that credential is not.
 
-> **Roles:** the app defaults to `os:reader`, enough for every COSI/machine-API
-> collector. File-based collectors (sensors, hwmon, DMI, …) need the `Read`
-> RPC, which is admin-only, and pause gracefully without it (re-probing every
-> 5 minutes, so a role change needs no restart). Set
-> `talos.roles` (Helm value) and this machine config's `allowedRoles` to
-> `[os:admin]` to enable those too — the app stays behaviorally read-only
-> either way, but the `os:admin` credential itself is not. On an Omni-managed
-> cluster Omni strips `os:admin` from the ServiceAccount roles; there, point
-> `TALOSCONFIG` at an Omni Talos-proxy config instead.
-
-### 2. Per-app Talos service account
-
-A `talos.dev/v1alpha1` ServiceAccount in the app's namespace; Talos' in-cluster
-controller turns it into a Kubernetes secret holding a short-lived (6h,
-auto-renewed) Talos client certificate. The Helm chart creates this resource,
-mounts the resulting secret, and sets `TALOSCONFIG` for the pod — no manual
-step needed when installing via the chart.
+> **Omni:** Omni owns the machine config, so it rejects `os:admin` in
+> `allowedRoles` patches and strips it from the configs it generates; a hand
+> patch only lasts until Omni's next config push. On Omni-managed clusters the
+> app therefore runs on `os:reader`. To get the `os:admin` parts, point
+> `TALOSCONFIG` at a talosconfig that dials through Omni's Talos API proxy with
+> an Omni identity instead of the in-cluster ServiceAccount.
 
 ## Running it
 
-### Via Helm chart
+### Helm
 
 ```sh
 helm install talos-monitoring oci://ghcr.io/yuriy-kovalchuk/charts/talos-monitoring \
@@ -115,19 +72,10 @@ helm install talos-monitoring oci://ghcr.io/yuriy-kovalchuk/charts/talos-monitor
   --namespace talos-monitoring --create-namespace
 ```
 
-(add `helm registry login ghcr.io -u <github-username>` first if the package is
-still private; the registry stays empty until the first `vX.Y.Z` tag is
-pushed — until then, build and install from this checkout instead, see
-[`examples/local-chart/`](examples/local-chart/))
-
-Verify: the pod reaches 1/1 Ready. Until `kubernetesTalosAPIAccess` is enabled
-on the nodes it stays 0/1 and logs `talosconfig unavailable, retrying` — that's
-expected, not a crash.
-
-Full deployment examples (released chart, and the local chart against a
-self-built image) live in [`examples/`](examples/). Chart values are
-documented in `charts/talos-monitoring/values.yaml` and validated by
-`values.schema.json`.
+The pod reaches 1/1 Ready. Until Talos API access is enabled on the nodes it
+stays 0/1 and logs `talosconfig unavailable, retrying` — expected, not a crash.
+Values are documented in `charts/talos-monitoring/values.yaml`; full examples,
+including the local chart with a self-built image, are in [`examples/`](examples/).
 
 ### Locally
 
@@ -137,43 +85,48 @@ make run TALOSCONFIG=~/.talos/config-admin       # another talosconfig, e.g. an 
 make run KUBECONFIG=~/.kube/other LISTEN=:9090   # another cluster or port
 ```
 
-Outside Kubernetes the monitor picks up the usual config paths automatically
-(`$KUBECONFIG`/`~/.kube/config`, `$TALOSCONFIG`/`~/.talos/config`); the `make run`
-variables override them for that run. Run `./bin/talos-monitoring serve --help` for
-the full flag list.
+Without overrides it uses `$KUBECONFIG`/`~/.kube/config` and
+`$TALOSCONFIG`/`~/.talos/config`. `./bin/talos-monitoring serve --help` lists
+every flag.
 
 ### Releasing
 
-1. Set `version` and `appVersion` in `charts/talos-monitoring/Chart.yaml` to the new
-   version, without the `v` (`0.2.0`).
-2. Rename the `[Unreleased]` section of `CHANGELOG.md` to that version and today's date.
-3. Commit, then push the tag `vX.Y.Z`. CD runs the CI checks, refuses a tag that does not
-   match `Chart.yaml` or has no changelog section, and publishes the signed image
-   (`:X.Y.Z`, `:vX.Y.Z`, `:latest`), the chart and a GitHub Release with that section
-   as its notes.
+1. Set `version` and `appVersion` in `charts/talos-monitoring/Chart.yaml` to the
+   release without the `v` (`0.2.0`).
+2. Rename `[Unreleased]` in `CHANGELOG.md` to that version and today's date.
+3. Commit and push the tag `vX.Y.Z`. CD runs the CI checks, refuses a tag that
+   does not match `Chart.yaml` or has no changelog section, and publishes the
+   signed image (`:X.Y.Z`, `:vX.Y.Z`, `:latest`), the chart and a GitHub Release.
 
-## Metrics
+## Metrics and dashboards
 
-Every metric is documented in [`docs/METRICS.md`](docs/METRICS.md), generated
-from a live exposition and kept in sync with the code by a test.
+- [`docs/METRICS.md`](docs/METRICS.md) — every exported metric, kept in sync
+  with the code by a test.
+- [`docs/built-in-dashboard.md`](docs/built-in-dashboard.md) — the dashboard at
+  `http://<host>:8080/`: current state plus a short in-memory history, no
+  charts, works without Prometheus.
+- [`docs/grafana-dashboards.md`](docs/grafana-dashboards.md) — the Grafana
+  dashboards shipped with the chart, for long-term history, trends and alerting.
 
-## Dashboards
+## GPUs
 
-Open `http://<host>:8080/` for the built-in dashboard: a cluster overview, a
-per-node page, and per-category pages (health, CPU, memory, storage,
-sensors, and more). It has no charts by design, it reports current state
-plus a short in-memory history, so it stays useful even without Prometheus
-running. Screenshots of every page are in
-[`docs/built-in-dashboard.md`](docs/built-in-dashboard.md).
+Every GPU is reported with its model, PCI address and bound driver on
+`os:reader`. Live counters depend on the vendor:
 
-For persistent, long-term metrics, trends, and alerting, use the Grafana
-dashboards that ship with the Helm chart, scraping `/metrics`. Screenshots
-of every dashboard are in
-[`docs/grafana-dashboards.md`](docs/grafana-dashboards.md).
+| | AMD (`amdgpu`) | NVIDIA |
+|---|---|---|
+| Identity and bound driver | ✅ `os:reader` | ✅ `os:reader` |
+| Utilisation, VRAM, GTT | ✅ `os:admin` (sysfs) | ❌ |
+| Temperature, fan, power | ✅ `os:admin` (hwmon) | ❌ |
+
+The NVIDIA driver writes no counters to sysfs or hwmon; it only answers NVML
+calls made by a process on the node. The Talos API can read files but not
+make those calls, so no role unlocks them. For NVIDIA counters, run NVIDIA's
+[`dcgm-exporter`](https://github.com/NVIDIA/dcgm-exporter) on GPU nodes
+alongside this app.
 
 ## Security
 
 The dashboard and `/metrics` are **unauthenticated** and expose hardware
-identifiers (chassis serials, system UUIDs, DIMM serials, disk WWIDs) as
-labels. The chart ships no NetworkPolicy — restricting network access to the
-pod is the operator's responsibility.
+identifiers (chassis serials, system UUIDs, DIMM serials, disk WWIDs) as labels.
+The chart ships no NetworkPolicy — restricting access is up to you.

@@ -151,7 +151,8 @@ func newRootCmd() *cobra.Command {
 			"Shorter = fresher metrics but more load on the Talos API: every scrape issues calls on every node.")
 	// Currently unused: every Inventory collector declares its own 1h DefaultTTL, which wins.
 	serve.Flags().DurationVar(&inventoryInterval, "inventory-interval", 5*time.Minute,
-		"how often static hardware inventory is re-collected when a collector has no own default")
+		"fallback TTL for inventory collectors without their own default "+
+			"(currently unused: every inventory collector declares 1h)")
 	serve.Flags().DurationVar(&historyWindow, "history.window", 10*time.Minute,
 		"how long the in-memory frequency samples are kept; the CPU page reports an "+
 			"observed range over this window because a single reading runs high "+
