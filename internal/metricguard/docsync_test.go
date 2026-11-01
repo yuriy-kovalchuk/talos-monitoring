@@ -138,7 +138,7 @@ func TestMetricsDocFamilyCount(t *testing.T) {
 
 	// One table row per family: "| `talos_...` | ... |".
 	rows := 0
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(line, "| `talos_") {
 			rows++
 		}

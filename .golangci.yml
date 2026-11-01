@@ -7,3 +7,6 @@ linters:
     # staticcheck SA1019 flags deprecated API usage
     - gosec
     - misspell
+    # modernize: builtin forms over hand-written ones (max, WaitGroup.Go,
+    # maps.Copy, range over int, strings.SplitSeq)
+    - modernize

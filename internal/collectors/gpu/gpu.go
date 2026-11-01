@@ -1,24 +1,4 @@
-// Package gpu collects GPU utilisation and memory from the DRM sysfs tree.
-//
-// This is the half of GPU monitoring the COSI resources do not cover, and the
-// half that matters for a compute GPU. Temperature, fan, power cap and clocks
-// already arrive through the sensors collector, which matches hwmon chips
-// generically and so picks up amdgpu without knowing what it is. What hwmon
-// does not expose is how busy the GPU is and how much of its VRAM is gone —
-// those live in /sys/class/drm/cardN/device/, and a card sitting at 95% VRAM
-// with an OOM-ing workload looks perfectly healthy on every other panel.
-//
-// Like sensors, this reads files through the Talos API, which needs the
-// os:admin role. On a permission error the collector self-disables for the
-// process lifetime and logs a hint, rather than failing every scrape.
-//
-// Absent hardware is not an error: a node with no GPU driver loaded has no
-// /sys/class/drm/cardN at all, and reports nothing.
-//
-// A card whose PCI device is runtime-suspended (asleep) cannot answer sysfs
-// reads. For those, utilisation is exported as a derived 0 — an asleep GPU
-// does no work — and the state itself as talos_gpu_runtime_suspended, rather
-// than the series vanishing or the driver being blamed for not reporting.
+// Package gpu collects GPU utilisation and VRAM from the DRM sysfs tree, which hwmon does not expose.
 package gpu
 
 import (
@@ -31,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/siderolabs/talos/pkg/machinery/api/machine"
@@ -47,8 +26,7 @@ const Name = "gpu"
 
 const drmRoot = "/sys/class/drm"
 
-// cardRe matches a DRM card directory and not its connector children:
-// "card0" yes, "card0-DP-1" and "renderD128" no.
+// cardRe matches a DRM card directory but not its connector children.
 var cardRe = regexp.MustCompile(`^card[0-9]+$`)
 
 // fileAPI is the part of the Talos client the collector uses (test seam).
@@ -61,11 +39,9 @@ type fileAPI interface {
 type Collector struct {
 	// api returns the file API to use for a node; overridable in tests.
 	api func(node *collector.NodeClient) fileAPI
-	log *slog.Logger
 
-	// disabled is set on the first permission error: file reads need
-	// os:admin, so retrying every interval would only repeat the failure.
-	disabled atomic.Bool
+	// gate trips on the first permission error (reads need os:admin).
+	gate *collector.PermissionGate
 
 	// snap receives the typed view alongside the metrics.
 	snap *snapshot.Store
@@ -73,7 +49,10 @@ type Collector struct {
 
 // New returns the gpu collector.
 func New(log *slog.Logger) *Collector {
-	return &Collector{api: defaultAPI, log: log}
+	return &Collector{
+		api:  defaultAPI,
+		gate: collector.NewPermissionGate(log, "gpu collector disabled", " and restart the exporter to re-enable"),
+	}
 }
 
 func defaultAPI(node *collector.NodeClient) fileAPI { return node.Client }
@@ -90,9 +69,7 @@ func (c *Collector) Name() string { return Name }
 // Class implements collector.Collector.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
-// card is one GPU's readings. The Has* flags separate "this driver does not
-// publish the file" from a genuine zero: an Intel iGPU has no
-// gpu_busy_percent, and reporting 0% busy for it would be a lie.
+// card is one GPU's readings; Has* flags separate an unpublished file from a real zero.
 type card struct {
 	Name   string // card0, card1, ...
 	Driver string
@@ -102,11 +79,7 @@ type card struct {
 	HasBusy bool
 	Busy    float64 // percent, 0-100
 
-	// Suspended is set when power/runtime_status read "suspended": the card's
-	// own counters are unreadable then, busy is a derived 0, and the UI
-	// renders the state instead of a value. hasPowerState marks that the
-	// state read itself succeeded (it is generic PCI sysfs, present on every
-	// real card) so the metric is exported as 0 rather than guessed.
+	// Suspended means the card is asleep and cannot answer sysfs reads, so busy is a derived 0.
 	Suspended     bool
 	hasPowerState bool
 
@@ -121,7 +94,7 @@ type card struct {
 
 // Collect discovers every DRM card and reads its counters.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
-	if c.disabled.Load() {
+	if c.gate.Off() {
 		return nil // self-disabled (os:reader); the disable warning has the hint
 	}
 	ctx = talosclient.WithNode(ctx, node.Node.IP)
@@ -131,7 +104,8 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	names, err := listCards(ctx, api)
 	if err != nil {
 		if collector.IsPermissionError(err) {
-			return c.disable(name)
+			c.gate.Trip(name, err)
+			return nil
 		}
 		return err
 	}
@@ -141,10 +115,10 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		cd, err := readCard(ctx, api, cardName)
 		if err != nil {
 			if collector.IsPermissionError(err) {
-				return c.disable(name)
+				c.gate.Trip(name, err)
+				return nil
 			}
-			// A card that disappeared mid-scrape (driver unbind, hot
-			// unplug) must not fail the whole node.
+			// A card unbound or unplugged mid-scrape must not fail the whole node.
 			continue
 		}
 		cards = append(cards, cd)
@@ -171,9 +145,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 func listCards(ctx context.Context, api fileAPI) ([]string, error) {
 	stream, err := api.LS(ctx, &machine.ListRequest{Root: drmRoot})
 	if err != nil {
-		// A node with no GPU driver bound has no /sys/class/drm tree at all.
-		// Depending on where the RPC fails that NotFound surfaces here or
-		// from Recv below; both are absent hardware, not a failure.
+		// No GPU driver bound means no /sys/class/drm tree: absent hardware, not a failure.
 		if talosclient.StatusCode(err) == codes.NotFound {
 			return nil, nil
 		}
@@ -205,8 +177,7 @@ func listCards(ctx context.Context, api fileAPI) ([]string, error) {
 	return out, nil
 }
 
-// readCard reads one card's identity and counters. Identity comes from uevent,
-// which is the only file guaranteed present for any DRM driver.
+// readCard reads one card; uevent is the only file any DRM driver guarantees.
 func readCard(ctx context.Context, api fileAPI, name string) (card, error) {
 	base := drmRoot + "/" + name + "/device"
 	cd := card{Name: name}
@@ -215,7 +186,7 @@ func readCard(ctx context.Context, api fileAPI, name string) (card, error) {
 	if err != nil {
 		return card{}, err
 	}
-	for _, line := range strings.Split(uevent, "\n") {
+	for line := range strings.SplitSeq(uevent, "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok {
 			continue
@@ -230,32 +201,24 @@ func readCard(ctx context.Context, api fileAPI, name string) (card, error) {
 		}
 	}
 
-	// power/runtime_status is generic PCI sysfs, present on every real card.
-	// It is read first because it decides how a failed busy read is
-	// interpreted: a runtime-suspended device cannot answer sysfs reads, and
-	// the state file itself still answers (it reports "suspended").
+	// power/runtime_status is generic PCI sysfs and decides how a failed busy read reads.
 	if s, err := collector.ReadFile(ctx, api, base+"/power/runtime_status"); err == nil {
 		cd.hasPowerState = true
 		cd.Suspended = strings.TrimSpace(s) == "suspended"
 	}
 
-	// Everything below is driver-specific and optional. A missing file means
-	// this driver does not report the quantity, which is an absent series.
+	// The rest is driver-specific: a missing file means an absent series.
 	busy, busyErr := readNumber(ctx, api, base+"/gpu_busy_percent")
 	switch {
 	case busyErr == nil:
 		cd.HasBusy, cd.Busy = true, busy
 	case talosclient.StatusCode(busyErr) == codes.NotFound:
-		// The driver does not publish the file (Intel i915): absent, asleep
-		// or awake.
+		// The driver does not publish the file (Intel i915): absent, asleep or awake.
 	case cd.Suspended:
-		// The read failed because the device is runtime-suspended. An asleep
-		// GPU does no work, so 0 is the honest value; the suspended flag (and
-		// its metric) marks it as derived, not measured.
+		// An asleep GPU does no work, so 0 is honest; the flag marks it derived, not measured.
 		cd.HasBusy, cd.Busy = true, 0
 	}
-	// Any other read error with unknown power state falls through to absent:
-	// the value is not guessed.
+	// Any other error with unknown power state falls through to absent: the value is not guessed.
 	total, totalErr := readNumber(ctx, api, base+"/mem_info_vram_total")
 	used, usedErr := readNumber(ctx, api, base+"/mem_info_vram_used")
 	if totalErr == nil && usedErr == nil {
@@ -269,30 +232,20 @@ func readCard(ctx context.Context, api fileAPI, name string) (card, error) {
 	return cd, nil
 }
 
-// readNumber reads a single-value sysfs file. The read error is surfaced so a
-// caller can tell a missing file (the driver does not report it) from a
-// failed read; an unparseable file is a parse error, not a zero.
+// readNumber reads a single-value sysfs file, surfacing the error to tell absent from failed.
 func readNumber(ctx context.Context, api fileAPI, path string) (float64, error) {
-	s, err := collector.ReadFile(ctx, api, path)
+	s, err := collector.ReadFileTrimmed(ctx, api, path)
 	if err != nil {
 		return 0, err
 	}
-	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	v, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse %s: %q is not a number", path, s)
 	}
 	return v, nil
 }
 
-// register exports the cards.
-//
-// Utilisation is a ratio 0-1, not the percent sysfs reports, per the base-unit
-// convention. VRAM and GTT are separate families because they are different
-// pools: VRAM is on the card, GTT is system memory the GPU can address, and
-// summing them would be meaningless. The runtime-suspended flag is exported
-// as a 0/1 gauge, not a labelled enum: dashboards want to match on it
-// (== 1), and the transient "suspending"/"resuming" states are not states a
-// user needs to act on.
+// register exports utilisation as a 0-1 ratio, VRAM and GTT as separate pools, suspension as 0/1.
 func register(nodeName string, cards []card, reg prometheus.Registerer) {
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_gpu_info",
@@ -337,20 +290,9 @@ func register(nodeName string, cards []card, reg prometheus.Registerer) {
 	}
 }
 
-// disable marks the collector self-disabled and logs the hint once.
-func (c *Collector) disable(nodeName string) error {
-	if c.disabled.CompareAndSwap(false, true) {
-		c.log.Warn("gpu collector disabled: file reads need the os:admin role (got a permission error)",
-			"node", nodeName, "value", "talos.roles")
-	}
-	return nil
-}
-
-// Degraded implements collector.DegradedReporter: once self-disabled the
-// collector returns nil without contacting the node, which is not evidence of
-// reachability. The flag is cluster-wide, so every node reports it.
+// Degraded flags the self-disable: the collector returns nil without contacting the node.
 func (c *Collector) Degraded(string) []collector.Degradation {
-	if c.disabled.Load() {
+	if c.gate.Off() {
 		return []collector.Degradation{{Reason: collector.ReasonPermission, Stopped: true}}
 	}
 	return nil

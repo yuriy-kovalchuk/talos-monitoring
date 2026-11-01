@@ -1,8 +1,4 @@
-// Package block collects block device inventory from the Talos COSI
-// "block" namespace and exposes it as Prometheus info metrics.
-//
-// Currently covers the Disk resource (one per disk); other block types
-// (volumes, filesystems, mounts) are out of scope for the hardware report.
+// Package block collects COSI block-device inventory as info metrics; Disk is the only kind in scope.
 package block
 
 import (
@@ -26,24 +22,13 @@ import (
 // Name is the registry name of the block collector.
 const Name = "block"
 
-// localTransports are the transports that mean "attached to this machine". An
-// allowlist, not a denylist: this is a hardware monitor, so an unrecognised
-// transport is reported as network-attached rather than silently counted as
-// local hardware.
-//
-// Everything else is storage the node reaches over a network — iSCSI above all
-// (Kubernetes PersistentVolumes appear as "iSCSI Disk" / "VIRTUAL-DISK"), plus
-// fibre channel, NBD and RBD. On the reference cluster that is 19 of 23
-// transport-carrying disks, so counting them as local made a 4-disk fleet look
-// like a 23-disk one.
+// localTransports is an allowlist: an unrecognised transport counts as network-attached, not local.
 var localTransports = map[string]bool{
 	"nvme": true, "sata": true, "ata": true, "ide": true,
 	"sas": true, "usb": true, "mmc": true, "virtio": true,
 }
 
-// Attachment classifies a block device by how the node reaches it. It is
-// exported as a label so the distinction the dashboard draws is queryable in
-// PromQL too, rather than something only the UI knows how to derive.
+// Attachment classifies how the node reaches a device, as a label so the split is queryable.
 func Attachment(transport string) string {
 	switch {
 	case transport == "":
@@ -55,15 +40,10 @@ func Attachment(transport string) string {
 	}
 }
 
-// diskInventoryTTL is how often the COSI Disk list is refreshed. The collector
-// runs on the live cadence for filesystem usage; disk topology does not move.
+// diskInventoryTTL is how often the COSI Disk list refreshes; disk topology does not move.
 const diskInventoryTTL = time.Hour
 
-// Collector implements collector.Collector for block devices: the disk
-// inventory (COSI, effectively static) and filesystem/volume usage (machine
-// API, live). They answer the same question — "what storage does this node
-// have?" — on very different timescales, so the COSI list is throttled
-// internally while usage is collected every tick.
+// Collector pairs the effectively static disk inventory with live filesystem usage on one tick.
 type Collector struct {
 	state  func(node *collector.NodeClient) state.CoreState
 	newAPI func(node *collector.NodeClient) mountAPI
@@ -81,16 +61,11 @@ func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 	return c
 }
 
-// diskInventory is a node's last successful Disk listing, kept so the metric
-// can be re-registered on ticks that do not re-list. The scraper hands out a
-// fresh registry per collection, so a skipped list would otherwise mean a
-// missing metric rather than a cached one.
+// diskInventory is the last successful listing, re-registered because the registry is fresh each run.
 type diskInventory struct {
 	ts   time.Time
 	rows []diskRow
-	// failedAt is when the last refresh attempt failed, zero when the last
-	// attempt succeeded. ts stays at the last success so the next tick retries;
-	// failedAt is what makes a long-running failure visible instead of silent.
+	// failedAt marks a failed refresh so a long failure is visible; ts stays at the last success.
 	failedAt time.Time
 }
 
@@ -111,14 +86,10 @@ func (c *Collector) Name() string { return Name }
 // Class implements collector.Collector: filesystem usage is live data.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
-// DefaultTTL implements collector.DefaultTTLer: 0 follows the scrape interval,
-// so --scrape-interval and --collectors.block.ttl both apply.
+// DefaultTTL returns 0 so --scrape-interval and --collectors.block.ttl both apply.
 func (c *Collector) DefaultTTL() time.Duration { return 0 }
 
-// Collect lists the node's block.Disk resources and registers them as
-// talos_block_disk_info (value 1, identity fields as labels). An empty list is
-// NOT an error: a node with no disks is unusual, not broken. Only the RPC
-// itself failing is an error, and then the scraper keeps the last good data.
+// Collect lists block.Disk and registers talos_block_disk_info; an empty list is not an error.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
 	name := node.Node.Name
 
@@ -149,11 +120,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		} else if !ok {
 			return err
 		} else {
-			// The cached list is still the best data available, so the scrape
-			// does not fail. It used to fail silently instead: the error was
-			// dropped here, so a node whose disk listing had been unlistable for
-			// hours counted as a success, moved no error counter and logged
-			// nothing. Record it for Degraded; the scraper logs the transition.
+			// The cached list is the best data, but the error must reach Degraded, not be dropped.
 			cached.failedAt = time.Now()
 			c.mu.Lock()
 			c.cache[name] = cached
@@ -195,10 +162,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	return nil
 }
 
-// diskGauge builds the disk identity metric. Identity strings only: the
-// measurements it used to carry as labels are their own gauges below, so
-// PromQL can do arithmetic on them and a resize moves a series instead of
-// abandoning it.
+// diskGauge carries identity only; measurements are separate gauges so PromQL can use them.
 func diskGauge() *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_block_disk_info",
@@ -240,8 +204,7 @@ func (d diskMeasures) set(node, device string, r diskRow) {
 	d.cdr.WithLabelValues(node, device).Set(r.CDROM)
 }
 
-// diskRow is one disk: the identity labels for _info plus the measurements
-// that now have their own series.
+// diskRow is one disk: identity labels for _info plus its measurements.
 type diskRow struct {
 	Labels     []string // in diskGauge's label order
 	Size       float64
@@ -299,9 +262,7 @@ func (c *Collector) listDisks(ctx context.Context, node *collector.NodeClient) (
 	return out, nil
 }
 
-// Degraded implements collector.DegradedReporter: a disk list that has not
-// refreshed since its last success is served from cache and looks exactly like
-// a clean collection.
+// Degraded flags a disk list served from cache after a failed refresh.
 func (c *Collector) Degraded(node string) []collector.Degradation {
 	c.mu.Lock()
 	cached, ok := c.cache[node]
@@ -312,13 +273,9 @@ func (c *Collector) Degraded(node string) []collector.Degradation {
 	return nil
 }
 
-// Prune implements collector.Pruner: drop the cached disk list for departed
-// nodes.
+// Prune drops the cached disk list for departed nodes.
 func (c *Collector) Prune(live map[string]struct{}) {
-	// An empty set means discovery has not synced yet, not that the cluster
-	// is empty — pruning here would drop every node's state on a transient
-	// watch blip. app.prune() guards this too; the Pruner contract says
-	// implementations must, so they do.
+	// An empty live set means discovery has not synced; the Pruner contract says that prunes nothing.
 	if len(live) == 0 {
 		return
 	}

@@ -1,14 +1,4 @@
-// Package timesync collects the node's clock discipline: whether Talos
-// considers time synced, and the kernel's adjtimex view of how far off it is.
-//
-// Clock skew is the classic silent failure. etcd rejects proposals, TLS
-// handshakes fail with certificates that are not yet valid, S3-style storage
-// auth rejects signed requests, and log correlation across nodes quietly stops
-// making sense — none of which shows up on a hardware panel. `synced == 0` for
-// five minutes is worth paging on.
-//
-// The package is named timesync rather than time so it does not shadow the
-// standard library inside the collector list.
+// Package timesync reports clock discipline: Talos's synced verdict and the kernel's adjtimex view.
 package timesync
 
 import (
@@ -28,8 +18,7 @@ import (
 // Name is the collector name (used in the --collectors.<name>.enabled and TTL flags).
 const Name = "time"
 
-// Collector reads TimeStatus and AdjtimeStatus from the COSI "runtime"
-// namespace.
+// Collector reads TimeStatus and AdjtimeStatus from the COSI runtime namespace.
 type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
@@ -52,10 +41,7 @@ func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 // Name implements collector.Collector.
 func (c *Collector) Name() string { return Name }
 
-// Class implements collector.Collector.
-//
-// Live: drift is a moving quantity, and the whole point is noticing it turn
-// bad. Nine series per node makes that cheap.
+// Live: drift is a moving quantity and the point is noticing it turn bad.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
 // Collect lists both kinds and registers them.
@@ -89,13 +75,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 
 // list lists a whole kind from the node's COSI state.
 
-// registerStatus exports Talos's own view of clock sync.
-//
-// Epoch counts how many times the clock has been stepped. It is monotonic
-// within a boot but resets to 0 on reboot, so it is a gauge, not a _total: a
-// counter would make rate() report a spurious reset as a negative rate. What
-// matters is that it changed — `changes(talos_time_epoch[1h]) > 0` means the
-// clock jumped, which invalidates any duration measured across the step.
+// registerStatus exports Talos's view; epoch is a gauge because it resets on reboot.
 func registerStatus(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.TimeSync) error {
 	g := func(name, help string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help}, []string{"node"})
@@ -124,15 +104,7 @@ func registerStatus(nodeName string, l resource.List, reg prometheus.Registerer,
 	return nil
 }
 
-// registerAdjtime exports the kernel's adjtimex view.
-//
-// Durations are seconds per the base-unit convention — the resource carries
-// Go time.Durations (nanoseconds), and an offset of -85µs is 8.5e-5 here.
-//
-// SyncStatus is NOT the same fact as talos_time_synced: this one is the
-// kernel's STA_UNSYNC flag, and Talos's is whether its own ntpd is happy with
-// its servers. They disagree exactly when something interesting is happening,
-// so both are exported.
+// registerAdjtime exports the kernel view in seconds; STA_UNSYNC and Talos's verdict differ.
 func registerAdjtime(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.TimeSync) error {
 	g := func(name, help string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help}, []string{"node"})

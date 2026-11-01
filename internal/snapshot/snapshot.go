@@ -1,17 +1,4 @@
-// Package snapshot holds the typed hardware inventory each collector gathers,
-// so the dashboard reads Go structs instead of re-parsing the Prometheus
-// exposition format it just produced.
-//
-// The exposition format is a wire format for Prometheus, not an internal data
-// layer. Routing the UI through it meant every measurement had to be a label
-// string, parse failures silently rendered as 0, a renamed label emptied the
-// page with no compiler error, and rendering one node page cost O(all metrics
-// x all nodes). Collectors already hold this data typed; they now write it
-// here as well as registering metrics, and /metrics and the dashboard become
-// two renderers over one source of truth.
-//
-// The pattern mirrors history.Store, which cpu.Collect has always filled
-// alongside its metrics; this generalises it from time series to inventory.
+// Package snapshot holds the typed per-node inventory the dashboard renders, alongside the metrics.
 package snapshot
 
 import (
@@ -45,8 +32,7 @@ type Socket struct {
 	Status       int
 }
 
-// Module is one DIMM (hardware.MemoryModule). Speed is transfers per second,
-// not hertz: SMBIOS reports DDR5-6000 as 6000 MT/s on a 3000 MHz clock.
+// Module is one DIMM; Speed is MT/s as SMBIOS reports it, not hertz.
 type Module struct {
 	Slot          string
 	Manufacturer  string
@@ -77,9 +63,7 @@ type Disk struct {
 	CDROM      bool
 }
 
-// PCIDevice is one device on the PCI bus, with its sysfs enrichment. The
-// Has* flags distinguish "not reported by this device" from a zero reading:
-// bridges and root ports have no link state at all.
+// PCIDevice is one PCI device with sysfs enrichment; Has* flags separate absent from zero.
 type PCIDevice struct {
 	BDF                string
 	Class              string
@@ -125,9 +109,7 @@ type Link struct {
 	Name string
 	Type string
 	Kind string // "" for a physical NIC
-	// Master names the bond or bridge this interface is a slave of; "" means the
-	// interface is topmost. A slave's traffic is counted on its master too, so an
-	// aggregate over every interface double-counts a bonded node.
+	// Master is the bond or bridge this interface slaves to; its traffic is counted there too.
 	Master          string
 	HWAddr          string
 	Driver          string
@@ -145,8 +127,7 @@ type Link struct {
 	MTUBytes        float64
 	Addresses       []Address
 
-	// Counters are cumulative since boot. HasRates is false on the first
-	// scrape after a restart, when there is no previous sample to diff.
+	// Counters are cumulative since boot; HasRates is false until a previous sample exists.
 	HasCounters bool
 	HasRates    bool
 	RxPerSecond float64
@@ -168,16 +149,13 @@ type Sensor struct {
 	Label    string // human label when the driver gives one
 	Value    float64
 
-	// Limits is keyed by kind ("critical", "max", "min"); empty when the
-	// driver publishes none, which is normal for k10temp and amdgpu.
+	// Limits is keyed by kind (critical/max/min); empty when the driver publishes none.
 	Limits   map[string]float64
 	HasAlarm bool
 	Alarm    float64
 }
 
-// Core is one hardware thread's live state. The frequencies are hertz, like
-// every other speed in this package: the collector converts cpufreq's
-// kilohertz at its own boundary.
+// Core is one hardware thread's live state; frequencies are hertz like every other speed here.
 type Core struct {
 	Index     int
 	HasUsage  bool
@@ -188,8 +166,7 @@ type Core struct {
 	Governor  string
 }
 
-// ModeShare is one /proc/stat mode's share of the node's CPU time over the
-// last scrape interval, 0-1. The shares sum to 1.
+// ModeShare is one /proc/stat mode's share of CPU time over the last interval, 0-1.
 type ModeShare struct {
 	Mode  string
 	Ratio float64
@@ -201,13 +178,11 @@ type CPU struct {
 	UsagePct float64 // node total
 	Cores    []Core
 
-	// Modes is empty on the first scrape after a restart, when there is no
-	// interval to divide by.
+	// Modes is empty on the first scrape, when there is no interval to divide by.
 	Modes []ModeShare
 }
 
-// Memory is /proc/meminfo, in bytes. Present is false on nodes that did not
-// report it.
+// Memory is /proc/meminfo in bytes; Present is false on nodes that did not report it.
 type Memory struct {
 	Present     bool
 	Total       float64
@@ -232,8 +207,7 @@ type Runtime struct {
 	Blocked   uint64
 	HasUptime bool
 
-	// HasLoad is false on a node whose LoadAvg RPC failed; 0.0 load is a
-	// legitimate reading on an idle machine and must not stand in for it.
+	// HasLoad is false when the LoadAvg RPC failed; 0.0 is a real reading on an idle node.
 	HasLoad bool
 	Load1   float64
 	Load5   float64
@@ -251,10 +225,7 @@ type Filesystem struct {
 	Kind       string // how the volume is reached: block | network | other
 }
 
-// Service is one init-system service (v1alpha1.Service).
-//
-// Healthy and Unknown are independent: a service with no health check reports
-// Healthy=false with Unknown=true, which means "no opinion", not "unhealthy".
+// Service is one init-system service; Unknown means no health check, not unhealthy.
 type Service struct {
 	ID      string
 	Running bool
@@ -268,18 +239,13 @@ type UnmetCondition struct {
 	Reason string
 }
 
-// Diagnostic is one warning raised by Talos's own diagnostics. ID maps to
-// talos.dev/diagnostic/<id>.
+// Diagnostic is one Talos warning; ID maps to talos.dev/diagnostic/<id>.
 type Diagnostic struct {
 	ID      string
 	Message string
 }
 
-// Health is the node's own verdict on whether it is working: per-service
-// state, the aggregated boot stage, and any diagnostic warnings.
-//
-// HasMachineStatus distinguishes "the machine reported stage running" from
-// "the MachineStatus resource was absent", which an empty Stage alone cannot.
+// Health is the node's own verdict: service state, boot stage and diagnostic warnings.
 type Health struct {
 	Stage            string
 	Ready            bool
@@ -289,19 +255,13 @@ type Health struct {
 	Diagnostics      []Diagnostic
 }
 
-// Extension is one installed system extension (runtime.ExtensionStatus).
-// The virtual `schematic` and `modules.dep` entries Talos reports alongside
-// real extensions are lifted out into Identity's own fields instead.
+// Extension is one installed system extension; Talos's pseudo-entries go to Identity instead.
 type Extension struct {
 	Name    string
 	Version string
 }
 
-// Identity is what software the node is running: the image it was built from,
-// the extensions in it, how it booted, and its security posture.
-//
-// HasSecurityState distinguishes "SecureBoot is off" from "the SecurityState
-// resource was absent", which the booleans alone cannot.
+// Identity is the node's software: image, extensions, boot mode and security posture.
 type Identity struct {
 	Schematic     string // Image Factory schematic id
 	KernelVersion string // from the synthetic modules.dep entry
@@ -317,10 +277,7 @@ type Identity struct {
 	FIPSState               string
 }
 
-// TimeSync is the node's clock discipline (time.Status + time.AdjtimeStatus).
-//
-// Synced and KernelSynced are different facts: the first is Talos's ntpd
-// verdict on its servers, the second the kernel's STA_UNSYNC flag.
+// TimeSync is clock discipline; Talos's ntpd verdict and the kernel's flag are separate facts.
 type TimeSync struct {
 	HasStatus    bool
 	Synced       bool
@@ -336,8 +293,7 @@ type TimeSync struct {
 	State           string // TIME_OK, TIME_ERROR, ...
 }
 
-// KernelParam is one kernel tunable, current versus default. Unsupported means
-// the running kernel does not know it, so a configured value is ignored.
+// KernelParam is one tunable, current vs default; Unsupported means the kernel ignores it.
 type KernelParam struct {
 	Name        string
 	Current     string
@@ -359,8 +315,7 @@ type Kernel struct {
 	Modules []KernelModule
 }
 
-// Volume is one Talos volume. Type separates real partitions from the
-// directory, overlay and symlink pseudo-volumes Talos also models here.
+// Volume is one Talos volume; Type separates partitions from pseudo-volumes.
 type Volume struct {
 	ID         string
 	Type       string
@@ -376,8 +331,7 @@ type Volume struct {
 	ErrorMessage          string
 }
 
-// Mount is one mounted volume's metadata. Usage bytes are NOT here — they come
-// from the Mounts RPC via Filesystem, which is the only source that has them.
+// Mount is a mounted volume's metadata; usage bytes come from the Mounts RPC instead.
 type Mount struct {
 	ID           string
 	Source       string
@@ -387,8 +341,7 @@ type Mount struct {
 	ProjectQuota bool
 }
 
-// Volumes is the node's volume layer: what Talos provisioned, what mounted,
-// and which disk it installed itself on.
+// Volumes is the node's volume layer: provisioned, mounted, and the install disk.
 type Volumes struct {
 	Volumes        []Volume
 	Mounts         []Mount
@@ -396,9 +349,7 @@ type Volumes struct {
 	SystemDiskPath string
 }
 
-// GPU is one graphics or compute card. The Has* flags separate "this driver
-// does not publish the quantity" from a genuine zero — an Intel iGPU reports
-// no utilisation at all, and 0% busy would be a lie.
+// GPU is one card; Has* flags separate an unpublished quantity from a genuine zero.
 type GPU struct {
 	Card   string
 	Driver string
@@ -418,9 +369,7 @@ type GPU struct {
 	GTTUsedBytes  float64
 }
 
-// DiskIO is one block device's I/O counters, in base units. Kind is disk,
-// partition or virtual — a partition's counters are also counted in its
-// parent, so summing across every device double-counts a partitioned disk.
+// DiskIO is one device's counters; a partition's are also in its parent, so sums double-count.
 type DiskIO struct {
 	Device string
 	Kind   string
@@ -433,9 +382,7 @@ type DiskIO struct {
 	IOTimeSeconds   float64
 }
 
-// Node is everything known about one machine. A nil section means that
-// collector has not reported yet (or is disabled), which the UI renders as
-// absent rather than as zero.
+// Node is everything known about a machine; a nil section means that collector has not reported.
 type Node struct {
 	Updated time.Time
 
@@ -459,13 +406,7 @@ type Node struct {
 	DiskIO      []DiskIO
 }
 
-// Store holds one Node per cluster member. Collectors write their own section
-// concurrently and at different cadences, so updates are per-section: a
-// collector that does not run this tick leaves the previous value in place,
-// matching how the scraper keeps the last good metrics.
-//
-// Readers (the dashboard) and writers (the scheduler) run concurrently, so
-// published snapshots are immutable — see Update.
+// Store holds one Node per member; collectors write their own section, so updates are per-section.
 type Store struct {
 	mu    sync.RWMutex
 	nodes map[string]*Node
@@ -477,15 +418,7 @@ func New() *Store {
 	return &Store{nodes: make(map[string]*Node), now: time.Now}
 }
 
-// Update applies fn to a node's snapshot, creating it if needed. fn runs under
-// the store lock, so it must not block.
-//
-// Copy-on-write: fn mutates a fresh copy, which then replaces the map entry.
-// A published *Node is never written again, so a reader that already holds one
-// keeps a consistent view without holding the lock. Mutating in place raced
-// with every dashboard request — Node() hands the pointer out and the caller
-// reads its fields outside the lock, so a slice header could be read while
-// being written.
+// Update copy-on-writes the snapshot under the lock, so a published *Node is never mutated again.
 func (s *Store) Update(node string, fn func(*Node)) {
 	if s == nil {
 		return
@@ -502,11 +435,7 @@ func (s *Store) Update(node string, fn func(*Node)) {
 	s.nodes[node] = next
 }
 
-// Node returns a node's snapshot, or nil when nothing has been collected.
-//
-// The result is immutable and safe to read without the lock: Update publishes
-// a new *Node rather than editing the one in place. Callers must not mutate
-// it, and must not assume two calls return the same pointer.
+// Node returns an immutable snapshot, safe to read without the lock; callers must not mutate it.
 func (s *Store) Node(name string) *Node {
 	if s == nil {
 		return nil
@@ -516,8 +445,7 @@ func (s *Store) Node(name string) *Node {
 	return s.nodes[name]
 }
 
-// Prune drops nodes no longer in the cluster. An empty live set prunes
-// nothing: it means discovery has not synced, not that the cluster is empty.
+// Prune drops departed nodes; an empty live set means discovery has not synced and prunes nothing.
 func (s *Store) Prune(live map[string]struct{}) {
 	if s == nil || len(live) == 0 {
 		return

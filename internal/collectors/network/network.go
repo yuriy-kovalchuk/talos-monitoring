@@ -1,11 +1,4 @@
-// Package network collects per-node network interface state from the Talos
-// COSI "network" namespace and exposes it as Prometheus metrics.
-//
-// Only interfaces that describe the machine are reported. A Talos node running
-// a CNI carries ~70 links, almost all of them veth pairs belonging to pods;
-// those churn constantly and say nothing about the hardware, so the collector
-// keeps physical NICs plus the logical interfaces an operator configures
-// (bonds, bridges, VLANs, wireguard).
+// Package network reports only interfaces that describe the machine, not the CNI's ~70 veths.
 package network
 
 import (
@@ -14,7 +7,6 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -31,24 +23,18 @@ import (
 // Name is the registry name of the network collector.
 const Name = "network"
 
-// keptKinds are the logical interface kinds worth reporting. A physical NIC has
-// no kind at all, which is how it is recognised; everything else not listed
-// here (veth, vxlan, dummy, tunnels) belongs to the CNI, not the machine.
+// keptKinds are the logical kinds worth reporting; a physical NIC has no kind at all.
 var keptKinds = map[string]bool{
 	"bond": true, "bridge": true, "vlan": true, "wireguard": true,
 }
 
-// speedUnknown is what the kernel reports for a link with no carrier: the
-// driver returns -1, which arrives as the unsigned sentinel. Exporting it would
-// put 4294967295 Mbit/s on a graph.
+// speedUnknown is the kernel's no-carrier sentinel; exporting it would plot 4294967295 Mbit/s.
 const speedUnknown = 4294967295
 
 // Collector implements collector.Collector for network interfaces.
 type Collector struct {
 	state  func(node *collector.NodeClient) state.CoreState
 	newAPI func(node *collector.NodeClient) fileAPI
-	log    *slog.Logger
-
 	// snap receives the typed interface list alongside the metrics.
 	snap *snapshot.Store
 	now  func() time.Time
@@ -56,19 +42,18 @@ type Collector struct {
 	mu   sync.Mutex
 	prev map[string]counterSample // keyed by node name
 
-	// countersDisabled is set on the first permission error: /proc/net/dev
-	// needs os:admin. Interface state comes from COSI and is unaffected.
-	countersDisabled atomic.Bool
+	// countersGate trips on the first permission error (/proc/net/dev needs os:admin).
+	countersGate *collector.PermissionGate
 }
 
 // New returns the network collector.
 func New(log *slog.Logger) *Collector {
 	return &Collector{
-		state:  collector.DefaultState,
-		newAPI: func(node *collector.NodeClient) fileAPI { return node.Client },
-		log:    log,
-		now:    time.Now,
-		prev:   make(map[string]counterSample),
+		state:        collector.DefaultState,
+		newAPI:       func(node *collector.NodeClient) fileAPI { return node.Client },
+		now:          time.Now,
+		countersGate: collector.NewPermissionGate(log, "network throughput disabled", "; interface state is unaffected"),
+		prev:         make(map[string]counterSample),
 	}
 }
 
@@ -78,21 +63,13 @@ func (c *Collector) Name() string { return Name }
 // Class implements collector.Collector: link state is live data.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
-// defaultTTL matches the cpu collector: throughput is only as smooth as the
-// sampling interval, and one /proc/net/dev read covers every interface.
+// defaultTTL matches cpu: throughput is only as smooth as the sampling interval.
 const defaultTTL = 5 * time.Second
 
 // DefaultTTL implements collector.DefaultTTLer.
 func (c *Collector) DefaultTTL() time.Duration { return defaultTTL }
 
-// Collect lists LinkStatus and AddressStatus and registers:
-//
-//	talos_net_link_info{node,link,...} 1
-//	talos_net_link_up{node,link}
-//	talos_net_link_carrier{node,link}
-//	talos_net_link_speed_mbit{node,link}
-//	talos_net_link_mtu_bytes{node,link}
-//	talos_net_address_info{node,link,address,family,scope} 1
+// Collect lists LinkStatus and AddressStatus and registers the link and address families.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
 	ctx = talosclient.WithNode(ctx, node.Node.IP)
 	st := c.state(node)
@@ -133,10 +110,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	var snapLinks []snapshot.Link
 	byName := map[string]int{}
 
-	// LinkStatus points at a bond or bridge by interface index, and an index is
-	// only useful once every link's name is known. Resolving it up front lets the
-	// loop below label a slave with its master: without that, nothing here (or in
-	// PromQL) can separate a bond's traffic from its slaves'.
+	// Masters are referenced by interface index, so names are resolved before the loop labels slaves.
 	nameByIndex := map[uint32]string{}
 	for _, r := range links.Items {
 		if l, ok := r.(*talosnet.LinkStatus); ok {
@@ -151,9 +125,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		}
 		spec := l.TypedSpec()
 		kind := spec.Kind
-		// A physical NIC is an ethernet link with no kind. Requiring the
-		// ethernet type as well drops loopback and the "void" queueing dummies
-		// (teql0), which have no kind either but describe nothing.
+		// A physical NIC is an ethernet link with no kind, which excludes loopback and queueing dummies.
 		physical := kind == "" && spec.Type == nethelpers.LinkEther
 		if !physical && !keptKinds[kind] {
 			continue
@@ -161,8 +133,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		id := l.Metadata().ID()
 		kept[id] = true
 
-		// The master may be a link this collector drops (a VRF, say); the slave is
-		// still its slave, so resolve against every link, not just the kept ones.
+		// The master may be a dropped link (a VRF), so resolve against every link.
 		master := ""
 		if mi := spec.MasterIndex; mi != 0 {
 			master = nameByIndex[mi]
@@ -219,8 +190,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 			continue
 		}
 		spec := a.TypedSpec()
-		// Only addresses on the interfaces reported above: pod addresses on CNI
-		// veths are unbounded and belong to Kubernetes, not the machine.
+		// Addresses only on reported interfaces: pod addresses on CNI veths are unbounded.
 		if !kept[spec.LinkName] {
 			continue
 		}

@@ -1,9 +1,4 @@
-// Package hwinfo collects hardware inventory from the Talos COSI "hardware"
-// namespace and exposes it as Prometheus info metrics.
-//
-// It provides four per-resource collectors — system (SystemInformation, one
-// per node), processor (one per socket), memory (one per DIMM slot) and
-// pci (one per BDF) — so each resource can be scraped at its own frequency.
+// Package hwinfo collects COSI hardware inventory as talos_hw_*_info metrics.
 package hwinfo
 
 import (
@@ -33,8 +28,7 @@ const (
 // defaultTTL: hardware inventory effectively never changes.
 const defaultTTL = time.Hour
 
-// Collector lists one COSI hardware resource kind per node and registers
-// it as talos_hw_*_info (value 1, identity fields as labels).
+// Collector lists one COSI hardware kind per node and registers it as an _info family.
 type Collector struct {
 	name     string
 	kindName string // display name for errors, e.g. "SystemInformation"
@@ -44,13 +38,11 @@ type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
 
-	// snap receives the typed inventory alongside the metrics, so the UI
-	// reads structs instead of re-parsing labels. nil disables it.
+	// snap receives the typed inventory alongside the metrics (nil disables it).
 	snap *snapshot.Store
 }
 
-// WithSnapshot points the collector at a snapshot store. Returns the receiver
-// so it can be chained in the registry list.
+// WithSnapshot points the collector at a snapshot store and returns the receiver to chain.
 func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 	c.snap = s
 	return c
@@ -88,11 +80,7 @@ func (c *Collector) Class() collector.Class { return collector.Inventory }
 // DefaultTTL implements collector.DefaultTTLer.
 func (c *Collector) DefaultTTL() time.Duration { return defaultTTL }
 
-// Collect lists the resource kind on the node and registers it as
-// talos_hw_*_info. An empty list is NOT an error — a VM with no DMI tables or
-// no PCI bus simply has none of this resource, and reporting that as a failure
-// made the error counter climb forever and could pull talos_node_up to 0 on a
-// healthy machine. Only the RPC itself failing is an error.
+// Collect lists the kind on the node; an empty list is not an error, only a failed RPC is.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
 	ctx = talosclient.WithNode(ctx, node.Node.IP)
 	list, err := listKind(ctx, c.state(node), c.kindName, c.kind)
@@ -100,11 +88,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 		return err
 	}
 	if len(list.Items) == 0 {
-		// The RPC succeeded and the node simply has none of this resource — a
-		// VM with no DMI tables, no DIMM inventory, no PCI bus. Reporting that
-		// as an error made the counter climb forever, logged at Warn every
-		// interval (there is never cached data to fall back to) and could pull
-		// talos_node_up to 0 for a healthy machine.
+		// The node has none of this resource (a VM without DMI tables): an error here would pin node_up at 0.
 		return nil
 	}
 	if err := c.register(node.Node.Name, list, reg); err != nil {
@@ -114,8 +98,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	return nil
 }
 
-// listKind lists a whole kind from the node's COSI state (empty-ID metadata
-// means "all resources of this kind").
+// listKind lists a whole kind (an empty ID means all resources of that kind).
 func listKind(ctx context.Context, st state.CoreState, name string, kind resource.Type) (resource.List, error) {
 	md := resource.NewMetadata(hardware.NamespaceName, kind, "", resource.VersionUndefined)
 	list, err := st.List(ctx, md)
@@ -125,9 +108,7 @@ func listKind(ctx context.Context, st state.CoreState, name string, kind resourc
 	return list, nil
 }
 
-// snapshot mirrors the listed resources into the typed store. Each kind knows
-// its own shape, so this switches on the collector's kind rather than adding a
-// second function pointer beside register.
+// snapshot mirrors the listing into the typed store, switching on the collector's kind.
 func (c *Collector) snapshot(nodeName string, list resource.List) {
 	if c.snap == nil {
 		return
@@ -210,10 +191,7 @@ func registerProcessor(nodeName string, list resource.List, reg prometheus.Regis
 		Help: "CPU socket identity (value 1), one series per socket.",
 	}, []string{"node", "socket", "product", "part_number", "serial_number", "asset_tag"})
 
-	// The counts and speeds used to ride as labels on the _info metric, where
-	// PromQL could not sum or compare them. Each is its own gauge keyed by
-	// (node, socket). SMBIOS reports speeds in MHz; these are hertz per the
-	// base-unit convention.
+	// Counts and speeds are gauges, not labels: labels cannot be summed or compared.
 	g := func(name, help string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help},
 			[]string{"node", "socket"})
@@ -223,10 +201,7 @@ func registerProcessor(nodeName string, list resource.List, reg prometheus.Regis
 	threads := g("talos_hw_processor_threads", "Hardware threads on the socket.")
 	maxHz := g("talos_hw_processor_max_hertz", "Maximum rated clock of the socket, in hertz.")
 	bootHz := g("talos_hw_processor_boot_hertz", "Clock at boot, in hertz.")
-	// The raw SMBIOS status word is an opaque bitfield (65 = populated +
-	// enabled), unqueryable without the spec to hand. Export the two bits that
-	// carry meaning as booleans, and keep the raw value with its encoding
-	// documented for anyone who wants the rest.
+	// The SMBIOS status word is an opaque bitfield, so the meaningful bits go out as booleans.
 	populated := g("talos_hw_processor_socket_populated", "1 when the socket holds a CPU (SMBIOS status bit 6).")
 	enabled := g("talos_hw_processor_enabled", "1 when the CPU is enabled (SMBIOS status bits 0-2 = 1).")
 	status := g("talos_hw_processor_status",
@@ -270,11 +245,7 @@ func memoryModuleGauge() *prometheus.GaugeVec {
 		"serial_number", "asset_tag"})
 }
 
-// memoryModuleMeasures are the per-DIMM numeric metrics, keyed by (node, slot).
-//
-// Speed is transfers per second, not hertz: SMBIOS reports DDR4-3200 as 3200,
-// which is 3200 MT/s on a 1600 MHz clock. Naming that "_hertz" would be wrong
-// by a factor of two, so it is _speed_transfers_per_second.
+// memoryModuleMeasures are the per-DIMM gauges; SMBIOS speed is MT/s, not hertz.
 func memoryModuleMeasures() (size, speed *prometheus.GaugeVec) {
 	size = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_hw_memory_module_size_bytes",
@@ -298,9 +269,7 @@ type moduleRow struct {
 func (r moduleRow) Node() string { return r.Labels[0] }
 func (r moduleRow) Slot() string { return r.Labels[1] }
 
-// memoryModuleValues extracts one label-value row per DIMM, in the gauge's
-// label order. Kept separate from registration so the memory collector can
-// re-register a cached listing without re-querying the node.
+// memoryModuleValues builds one label row per DIMM so a cached listing can be re-registered.
 func memoryModuleValues(nodeName string, list resource.List) ([]moduleRow, error) {
 	out := make([]moduleRow, 0, len(list.Items))
 	for _, r := range list.Items {
@@ -327,8 +296,7 @@ func memoryModuleValues(nodeName string, list resource.List) ([]moduleRow, error
 	return out, nil
 }
 
-// registerMemory keeps the generic Collector signature working for tests and
-// any caller that lists and registers in one step.
+// registerMemory keeps the generic Collector signature for tests and one-step callers.
 func registerMemory(nodeName string, list resource.List, reg prometheus.Registerer) error {
 	vals, err := memoryModuleValues(nodeName, list)
 	if err != nil {

@@ -15,29 +15,17 @@ import (
 )
 
 const (
-	// talosReconcileInterval is how often the pool reloads the config and
-	// retries nodes without a verified client. Steady-state cost is one
-	// local file read per tick (no RPCs once all nodes are verified), so
-	// a short interval keeps startup snappy and rotation pickup fast.
+	// talosReconcileInterval is the config reload and verify-retry period; steady state is one file read.
 	talosReconcileInterval = 10 * time.Second
 	// talosVerifyTimeout bounds a single per-node Talos API check.
 	talosVerifyTimeout = 10 * time.Second
-	// talosVerifyConcurrency bounds the parallel node verification. Sequentially,
-	// a fresh pool of N nodes cost up to N * talosVerifyTimeout before the first
-	// scrape; in parallel the pool is ready in one timeout regardless of size.
+	// talosVerifyConcurrency bounds parallel verification so a fresh pool is ready in one timeout.
 	talosVerifyConcurrency = 8
 	// talosConfigRetry is the wait between talosconfig load attempts.
 	talosConfigRetry = 10 * time.Second
 )
 
-// TalosClientPool keeps one machinery client per node IP and verifies each
-// node's Talos API (machine.MachineService/Version).
-//
-// The client certificate comes from the resolved talosconfig: in-cluster
-// that is the serviceaccounts.talos.dev secret (Built-in Apps & In-Cluster
-// Authentication — mandatory), locally ~/.talos/config. In-cluster the SA
-// controller rotates the client cert every 6 h; the reconcile loop detects
-// the file change (fingerprint) and rebuilds all clients.
+// TalosClientPool keeps one machinery client per node IP and verifies each node's Talos API.
 type TalosClientPool struct {
 	log       *slog.Logger
 	listNodes func() []Node
@@ -50,8 +38,7 @@ type TalosClientPool struct {
 	verifiedIP map[string]string              // node name → the IP that verification used
 }
 
-// NewTalosClientPool creates a pool; listNodes provides the current node
-// snapshot (typically Manager.Nodes).
+// NewTalosClientPool reads the current node set from listNodes (typically Manager.Nodes).
 func NewTalosClientPool(log *slog.Logger, listNodes func() []Node) *TalosClientPool {
 	return &TalosClientPool{
 		log:        log,
@@ -63,8 +50,7 @@ func NewTalosClientPool(log *slog.Logger, listNodes func() []Node) *TalosClientP
 	}
 }
 
-// Run loads the talosconfig and reconciles the per-node clients until ctx
-// is done. Failures are logged and retried; Run never fails hard.
+// Run loads the talosconfig and reconciles per-node clients until ctx is done, retrying failures.
 func (p *TalosClientPool) Run(ctx context.Context) {
 	defer p.closeAll()
 
@@ -104,8 +90,7 @@ func (p *TalosClientPool) Run(ctx context.Context) {
 	}
 }
 
-// Ready reports whether a talosconfig has been loaded and per-node clients
-// can be created.
+// Ready reports whether a talosconfig is loaded and per-node clients can be created.
 func (p *TalosClientPool) Ready() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -113,13 +98,11 @@ func (p *TalosClientPool) Ready() bool {
 }
 
 // Get returns the machinery client for a node IP, creating it if needed.
-// Used by the collector framework (phase 2c).
 func (p *TalosClientPool) Get(ip string) (*talosclient.Client, error) {
 	return p.getOrCreate(ip)
 }
 
-// Status reports the last verified Talos version for a node and whether its
-// API check currently passes.
+// Status reports the last verified Talos version and whether the API check currently passes.
 func (p *TalosClientPool) Status(name string) (string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -131,8 +114,7 @@ func talosConfigAvailable() bool {
 	return err == nil
 }
 
-// markVerified records a successful Version check. The IP is kept alongside so
-// reconcile can tell a stable node from one that moved.
+// markVerified records a successful Version check, keeping the IP to spot a node that moved.
 func (p *TalosClientPool) markVerified(name, ip, version string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -142,17 +124,13 @@ func (p *TalosClientPool) markVerified(name, ip, version string) {
 }
 
 func (p *TalosClientPool) reconcile(ctx context.Context) {
-	// Read the config file and list nodes before taking the lock: both touch
-	// the filesystem or another subsystem, and holding the mutex across them
-	// blocked every Get for the duration. The old code also unlocked and
-	// relocked mid-function to log, which briefly exposed a half-rebuilt pool.
+	// Config read and node list happen outside the lock: holding it there blocked every Get.
 	fresh, freshErr := LoadTalosConfig()
 	current := p.listNodes()
 
 	p.mu.Lock()
 
-	// Rebuild when the file changed. In-cluster this is how the 6 h client-cert
-	// rotation by talos-sa-controller is picked up.
+	// A changed file is how the SA controller's 6 h client-cert rotation is picked up.
 	rebuilt := false
 	if freshErr == nil && p.cfg != nil && fresh.Fingerprint != p.cfg.Fingerprint {
 		p.cfg = &fresh
@@ -175,11 +153,7 @@ func (p *TalosClientPool) reconcile(ctx context.Context) {
 			delete(p.clients, ip)
 		}
 	}
-	// Forget verification for nodes that are gone, and for nodes whose IP
-	// moved: the client for the old IP was just closed above, so the version
-	// on file was read from a machine we no longer talk to. Keying clients by
-	// IP and verification by name meant a same-name-new-IP node kept reporting
-	// its predecessor's Talos version forever.
+	// Forget departed nodes and nodes whose IP moved, or the old IP's Talos version is reported forever.
 	byName := make(map[string]string, len(current))
 	for _, n := range current {
 		byName[n.Name] = n.IP
@@ -209,13 +183,11 @@ func (p *TalosClientPool) reconcile(ctx context.Context) {
 	sem := make(chan struct{}, talosVerifyConcurrency)
 	for i := range pending {
 		n := pending[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			p.verifyOne(ctx, n)
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -244,9 +216,7 @@ func (p *TalosClientPool) verifyOne(ctx context.Context, n Node) {
 	p.log.Info("talos client ok", "node", n.Name, "ip", n.IP, "talos_version", tag)
 }
 
-// apidEndpoint builds the apid URL for a node address. JoinHostPort brackets
-// IPv6 literals; a plain Sprintf produced an unparseable endpoint for an
-// address like fd00::1, so IPv6-only clusters could never connect.
+// apidEndpoint joins host and port, which brackets the IPv6 literals Sprintf would break.
 func apidEndpoint(ip string) string {
 	return "https://" + net.JoinHostPort(ip, strconv.Itoa(constants.ApidPort))
 }

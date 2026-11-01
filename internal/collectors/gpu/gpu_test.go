@@ -319,7 +319,7 @@ func TestPermissionErrorSelfDisables(t *testing.T) {
 	if err := c.Collect(context.Background(), node, prometheus.NewRegistry()); err != nil {
 		t.Fatalf("permission error surfaced as a scrape failure: %v", err)
 	}
-	if !c.disabled.Load() {
+	if !c.gate.Off() {
 		t.Fatal("collector did not self-disable after a permission error")
 	}
 	// Second round is a no-op: it must not retry the same failing call.
@@ -374,9 +374,7 @@ func TestDegradedReflectsSelfDisable(t *testing.T) {
 	if d := c.Degraded("n1"); len(d) != 0 {
 		t.Fatalf("a live collector reported %v", d)
 	}
-	if err := c.disable("n1"); err != nil {
-		t.Fatalf("disable: %v", err)
-	}
+	c.gate.Trip("n1", errors.New("permission denied"))
 	d := c.Degraded("n1")
 	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || !d[0].Stopped {
 		t.Errorf("Degraded = %+v, want one stopped %q degradation", d, collector.ReasonPermission)

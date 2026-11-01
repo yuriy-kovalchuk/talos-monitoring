@@ -43,7 +43,7 @@ func cpuReg(node string, threads int) *prometheus.Registry {
 	use := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "talos_node_cpu_usage_ratio", Help: "h"}, []string{"node", "cpu"})
 	gov := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "talos_node_cpu_governor_info", Help: "h"}, []string{"node", "cpu", "governor"})
 	r.MustRegister(freq, use, gov)
-	for c := 0; c < threads; c++ {
+	for c := range threads {
 		id := fmt.Sprintf("%d", c)
 		freq.WithLabelValues(node, id).Set(2.4e9)
 		use.WithLabelValues(node, id).Set(0.3)
@@ -58,7 +58,7 @@ func pciReg(node string, n int) *prometheus.Registry {
 		[]string{"node", "bdf", "class", "subclass", "vendor", "product", "class_id", "subclass_id",
 			"vendor_id", "product_id", "driver", "revision", "subsystem_vendor_id", "subsystem_product_id"})
 	r.MustRegister(info)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		info.WithLabelValues(node, fmt.Sprintf("0000:%02x:00.0", i), "Bridge", "", "V", "P",
 			"0x06", "0x04", "0x1022", "0x14ed", "pcieport", "0x00", "0x1022", "0x14ed").Set(1)
 	}
@@ -69,7 +69,7 @@ func blockReg(node string, n int) *prometheus.Registry {
 	r := prometheus.NewRegistry()
 	size := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "talos_block_disk_size_bytes", Help: "h"}, []string{"node", "device"})
 	r.MustRegister(size)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		size.WithLabelValues(node, fmt.Sprintf("/dev/sd%c", 'a'+i)).Set(1e12)
 	}
 	return r
@@ -80,7 +80,7 @@ func sensorReg(node string, n int) *prometheus.Registry {
 	t := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "talos_sensor_temperature_celsius", Help: "h"},
 		[]string{"node", "chip", "chip_name", "sensor", "label"})
 	r.MustRegister(t)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		t.WithLabelValues(node, "/sys/class/hwmon/hwmon0", "coretemp", fmt.Sprintf("temp%d", i), "").Set(45)
 	}
 	return r

@@ -73,13 +73,11 @@ func TestNilStoreIsSafe(t *testing.T) {
 func TestConcurrentUpdates(t *testing.T) {
 	s := New()
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			s.Update("n1", func(n *Node) { n.Sockets = []Socket{{ID: "CPU0"}} })
 			s.Node("n1")
-		}(i)
+		})
 	}
 	wg.Wait()
 	if got := s.Node("n1"); got == nil || len(got.Sockets) != 1 {
@@ -100,9 +98,7 @@ func TestConcurrentReadWriteIsRaceFree(t *testing.T) {
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := 0; ; i++ {
 			select {
 			case <-stop:
@@ -115,9 +111,9 @@ func TestConcurrentReadWriteIsRaceFree(t *testing.T) {
 				n.Sensors = make([]Sensor, i%4+1)
 			})
 		}
-	}()
+	})
 
-	for i := 0; i < 20000; i++ {
+	for range 20000 {
 		n := s.Node("n1")
 		if n == nil {
 			continue

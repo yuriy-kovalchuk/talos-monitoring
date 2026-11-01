@@ -1,12 +1,4 @@
-// Package kernel collects kernel tunables and loaded modules.
-//
-// The value here is drift, not liveness. A kernel parameter set in the machine
-// configuration that the running kernel does not recognise is silently ignored
-// — Talos marks it `unsupported`, and that flag is the only signal anywhere
-// that the setting you wrote is not the setting you have. The loaded module
-// list is the audit companion: it says which drivers a node actually brought
-// up, which is how you find the node that came back from a reboot without its
-// storage or GPU driver.
+// Package kernel collects kernel tunables and modules; the value is drift, not liveness.
 package kernel
 
 import (
@@ -31,8 +23,7 @@ const Name = "kernel"
 // defaultTTL: tunables and modules change on reboot, not during a run.
 const defaultTTL = time.Hour
 
-// Collector reads KernelParamStatus and LoadedKernelModule from the COSI
-// "runtime" namespace.
+// Collector reads KernelParamStatus and LoadedKernelModule from the COSI runtime namespace.
 type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
@@ -92,22 +83,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 
 // list lists a whole kind from the node's COSI state.
 
-// registerParams exports kernel tunables.
-//
-// The values are exported as labels, not as gauge values, and deliberately so:
-// a kernel parameter is not a measurement. Its value may be a number
-// (`1048576`), a list (`0 0 0`), a mode word, or a path — there is no unit and
-// nothing to average. What a query wants is "which nodes differ", which is a
-// label comparison:
-//
-//	count(count by (param, current) (talos_kernel_param_info)) by (param)
-//
-// The two genuine booleans get real gauges: `unsupported` says the running
-// kernel does not know this parameter, so the machineconfig lied to you, and
-// `drifted` says the current value is not the kernel's default — the set of
-// tunables this cluster actually changed. Drift is derivable from the labels
-// by eye but not by PromQL, which cannot compare two labels of the same
-// series, so the count the dashboard shows would be unqueryable without it.
+// registerParams exports params as labels (a tunable is not a measurement) plus unsupported/drifted gauges.
 func registerParams(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Kernel) error {
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_kernel_param_info",
@@ -154,22 +130,14 @@ func registerParams(nodeName string, l resource.List, reg prometheus.Registerer,
 			Unsupported: spec.Unsupported,
 		})
 	}
-	// Zero-initialised: on a healthy node nothing is unsupported, and a count
-	// of 0 is what distinguishes that from the collector never having run.
+	// Zero-initialised: 0 distinguishes a healthy node from a collector that never ran.
 	unsupportedCount.WithLabelValues(nodeName).Set(float64(unsupportedTotal))
 	driftedCount.WithLabelValues(nodeName).Set(float64(driftedTotal))
 	sort.Slice(view.Params, func(i, j int) bool { return view.Params[i].Name < view.Params[j].Name })
 	return nil
 }
 
-// registerModules exports the loaded module list.
-//
-// Dependencies are not collected at all — not as a metric, and not into the
-// snapshot. As a metric they are an unbounded per-module list with nothing to
-// aggregate; in the snapshot they would be data no page renders, which the §1.1
-// invariant runs in reverse: the UI is a subset of the metrics, so carrying
-// something the metrics do not have is how a page ends up showing a value
-// Prometheus cannot.
+// registerModules exports the module list; dependencies are not collected (§1.1 the other way).
 func registerModules(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Kernel) error {
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_kernel_module_info",

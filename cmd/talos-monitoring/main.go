@@ -1,5 +1,4 @@
-// Command talos-monitoring exports Talos node hardware data as Prometheus metrics
-// and serves a built-in htmx dashboard.
+// Command talos-monitoring exports Talos node hardware as Prometheus metrics and serves an htmx dashboard.
 package main
 
 import (
@@ -49,9 +48,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	// One enabled flag per registered collector, registered below as
-	// --collectors.<name>.enabled (default on, the old --collectors=all
-	// behaviour).
+	// One --collectors.<name>.enabled flag per registered collector, default on.
 	var (
 		enableBlock, enableCPU, enableDiskio, enableGpu, enableHealth bool
 		enableIdentity, enableKernel, enableMemory, enableNetwork     bool
@@ -149,9 +146,7 @@ func newRootCmd() *cobra.Command {
 		"how often the live nodeapi and sensors data is re-collected from the nodes. "+
 			"The fast cpu collector defaults to 5s (see --collectors.cpu.ttl). "+
 			"Shorter = fresher metrics but more load on the Talos API: every scrape issues calls on every node.")
-	// Currently unreachable: every Inventory-class collector declares its own
-	// 1h DefaultTTL, which wins over this. It stays as the class default for
-	// future collectors that do not.
+	// Currently unused: every Inventory collector declares its own 1h DefaultTTL, which wins.
 	serve.Flags().DurationVar(&inventoryInterval, "inventory-interval", 5*time.Minute,
 		"how often static hardware inventory is re-collected when a collector has no own default")
 	serve.Flags().DurationVar(&historyWindow, "history.window", 10*time.Minute,

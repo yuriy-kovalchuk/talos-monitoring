@@ -343,7 +343,7 @@ func TestPermissionErrorDisablesCountersOnly(t *testing.T) {
 	if _, ok := sample(t, fams, "talos_net_link_rx_bytes_total", map[string]string{"link": "enp1s0"}); ok {
 		t.Error("counters exported despite a permission error")
 	}
-	if !e.c.countersDisabled.Load() {
+	if !e.c.countersGate.Off() {
 		t.Error("collector did not self-disable its counter reads")
 	}
 	// Second round must not retry the refused read.
@@ -436,7 +436,7 @@ func TestDegradedReflectsCounterDisable(t *testing.T) {
 	if d := c.Degraded("n1"); len(d) != 0 {
 		t.Fatalf("a live collector reported %v", d)
 	}
-	c.countersDisabled.Store(true)
+	c.countersGate.Trip("n1", errors.New("permission denied"))
 	d := c.Degraded("n1")
 	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
 		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)

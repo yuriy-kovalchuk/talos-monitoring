@@ -44,38 +44,24 @@ const (
 
 // Options holds serve-time configuration.
 type Options struct {
-	// ScrapeInterval is how often Live collectors (sensors, CPU stats)
-	// re-query the nodes (0 → 30s). Shorter = fresher metrics, more load
-	// on the Talos API: every scrape issues calls on every node.
+	// ScrapeInterval is how often Live collectors re-query nodes (0 → 30s); shorter means more Talos load.
 	ScrapeInterval time.Duration
-	// InventoryInterval is how often Inventory collectors (hardware, disks)
-	// re-query the nodes (0 → 5m).
+	// InventoryInterval is how often Inventory collectors re-query nodes (0 → 5m).
 	InventoryInterval time.Duration
-	// CollectorEnabled holds per-collector enabled decisions, keyed by name.
-	// A missing name stays enabled; an explicit false registers the collector
-	// but keeps it out of the scrape loop. Unregistered names are skipped.
+	// CollectorEnabled is a per-name enable decision; a missing name stays enabled.
 	CollectorEnabled map[string]bool
-	// CollectorTTLs holds per-collector TTL overrides by name (absent or
-	// zero = the class default).
+	// CollectorTTLs overrides a collector's TTL by name (absent or zero = class default).
 	CollectorTTLs map[string]time.Duration
-	// HistoryWindow is how long the in-memory graph history keeps samples
-	// (0 → 10m). RAM-only; durable history stays with Prometheus.
+	// HistoryWindow is how long the in-RAM graph history keeps samples (0 → 10m).
 	HistoryWindow time.Duration
-	// CPUFreqInterval throttles the per-core current-frequency pass on nodes
-	// that need one read per core (0 → every cpu tick). Only those nodes pay
-	// it: machines whose /proc/cpuinfo is already per-core keep the single read.
+	// CPUFreqInterval throttles the per-core current-frequency pass on nodes that need one read per core.
 	CPUFreqInterval time.Duration
 
-	// CPUModeSeconds enables talos_node_cpu_seconds_total, the per-core,
-	// per-mode CPU time counters. Off by default: 10 series per thread per
-	// node, and nothing in the UI reads them. Turn it on to compute usage in
-	// PromQL rather than trusting the exporter's own ratio.
+	// CPUModeSeconds turns on talos_node_cpu_seconds_total: 10 series per thread per node, and no UI page reads them.
 	CPUModeSeconds bool
 }
 
-// schedulerTick is the always-on scrape loop period. Refresh() only
-// collects (node, collector) pairs past their TTL, so a sub-TTL tick is a
-// cheap map scan; the tick bounds how late a cadence can run.
+// schedulerTick bounds how late a cadence can run; a sub-TTL tick is only a map scan.
 const schedulerTick = time.Second
 
 // pruneInterval is how often data for departed nodes is dropped.
@@ -184,33 +170,18 @@ func New(log *slog.Logger, opts Options) (*App, error) {
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
-		// Idle keep-alive connections need a deadline of their own. Without
-		// IdleTimeout the server holds one open for the life of the process, so an
-		// abandoned dashboard tab costs a goroutine and an fd forever on a pod that
-		// is never restarted. It must stay above the scrape interval (30 s by
-		// default, and the ServiceMonitor's interval too), otherwise the server
-		// closes Prometheus's pooled connection between scrapes and every scrape
-		// pays a fresh TCP handshake.
+		// IdleTimeout stops an abandoned dashboard tab holding a connection forever; keep it above the scrape interval.
 		IdleTimeout: 60 * time.Second,
 	}
 	return a, nil
 }
 
-// ready is /ready: both halves of startup must have completed.
-//
-// Discovery alone is not readiness. The Kubernetes API answers whether the
-// cluster *has* nodes; the Talos client pool answers whether the exporter can
-// actually reach them (the talos.dev ServiceAccount Secret has been mounted and
-// parsed). Wiring this to discovery alone let the pod report Ready while every
-// collector was failing on a missing talosconfig — which is exactly the state
-// the chart's readiness probe exists to surface, and what the README tells
-// operators to expect ("it stays 0/1 and logs talosconfig unavailable").
+// ready needs both halves: discovery synced and a talosconfig loaded, or every collector is failing.
 func (a *App) ready() bool {
 	return a.nodes.Ready() && a.talosPool.Ready()
 }
 
-// logCadences logs the effective per-collector scrape cadence (sorted by
-// name) at startup.
+// logCadences logs the effective per-collector cadence at startup.
 func logCadences(log *slog.Logger, scraper *collector.Scraper) {
 	cads := scraper.TTLs()
 	if len(cads) == 0 {
@@ -228,8 +199,7 @@ func logCadences(log *slog.Logger, scraper *collector.Scraper) {
 	log.Info("scrape cadences (always-on; the UI and /metrics are pure viewers)", kv...)
 }
 
-// Run starts node discovery, the Talos client pool, the always-on scraper
-// and the HTTP server, blocking until ctx is done.
+// Run starts discovery, the client pool, the scheduler and the HTTP server, blocking until ctx is done.
 func (a *App) Run(ctx context.Context, listen string) error {
 	go a.nodes.Run(ctx)
 	go a.watchVolumes(ctx)
@@ -263,16 +233,11 @@ func (a *App) Run(ctx context.Context, listen string) error {
 	}
 }
 
-// schedule drives the always-on scraper: every second, Refresh() collects
-// only the (node, collector) pairs whose TTL has expired. Scraping is
-// independent of the UI and of /metrics — both are pure viewers of the
-// cached results.
+// schedule ticks the scraper every second; /metrics and the UI are pure viewers of what it cached.
 func (a *App) schedule(ctx context.Context) {
 	ticker := time.NewTicker(schedulerTick)
 	defer ticker.Stop()
-	// Pruning only matters when a node leaves the cluster, which the informer
-	// reports in its own time; running it every second copied the node list
-	// 60x a minute to do nothing (finding 5.7).
+	// Prune only matters when a node leaves, so it does not need the 1 s tick.
 	prune := time.NewTicker(pruneInterval)
 	defer prune.Stop()
 	for {
@@ -287,9 +252,7 @@ func (a *App) schedule(ctx context.Context) {
 	}
 }
 
-// watchVolumes starts the PersistentVolume watcher once a Kubernetes client is
-// available. Failures are retried; without PV permissions the node-side usage
-// metrics still work, the volumes are just unnamed.
+// watchVolumes starts the PV watcher once a Kubernetes client exists; without PV rights volumes stay unnamed.
 func (a *App) watchVolumes(ctx context.Context) {
 	for {
 		cs, err := nodes.NewClientset()
@@ -306,12 +269,7 @@ func (a *App) watchVolumes(ctx context.Context) {
 	}
 }
 
-// prune drops per-node state for nodes that left the cluster: graph history,
-// the typed snapshot, the shared SystemStat cache, and whatever each collector
-// keeps of its own (previous samples, cached inventories, sensor layouts).
-//
-// An empty node list means discovery has not synced, not that the cluster is
-// empty, and prunes nothing — the same rule the scraper follows.
+// prune drops per-node state for gone nodes; an empty live set means discovery has not synced and prunes nothing.
 func (a *App) prune() {
 	ns := a.nodes.Nodes()
 	if len(ns) == 0 {
@@ -331,13 +289,7 @@ func (a *App) prune() {
 	}
 }
 
-// nodeStatus is the dashboard's view of a node: the Talos version last seen by
-// the client pool, and whether the node is reachable.
-//
-// Reachability comes from the scraper, not the pool. The pool sets its verified
-// flag once and never clears it, so a node that died after being verified
-// rendered as up forever (finding 1.2). The scraper re-evaluates every round,
-// which is what the "up" column, the header pill and talos_node_up all mean.
+// nodeStatus takes reachability from the scraper, not the pool: the pool's verified flag is never cleared.
 func nodeStatus(tp *nodes.TalosClientPool, scraper *collector.Scraper) func(string) (string, bool) {
 	return func(name string) (string, bool) {
 		version, _ := tp.Status(name)

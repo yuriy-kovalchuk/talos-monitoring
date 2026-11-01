@@ -12,8 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collector"
 )
 
-// procNetDev holds every interface's counters, so throughput costs one read per
-// scrape however many interfaces the node has (91 on the reference node).
+// procNetDev holds every interface's counters, so throughput costs one read per scrape.
 const procNetDev = "/proc/net/dev"
 
 // ifCounters is one interface's cumulative counters.
@@ -22,23 +21,15 @@ type ifCounters struct {
 	txBytes, txPackets, txErrors, txDropped uint64
 }
 
-// counterSample is the previous scrape's counters for a node, used to turn
-// cumulative values into a rate.
+// counterSample is the previous scrape's counters, for turning totals into rates.
 type counterSample struct {
 	at   time.Time
 	byIf map[string]ifCounters
 }
 
-// registerCounters reads /proc/net/dev, exports the cumulative counters and
-// derives per-second rates against the previous sample.
-//
-// Counters are exported as counters so PromQL can rate() them itself; the
-// derived rate exists because the dashboard needs a number now, without a
-// range query. This mirrors how the cpu collector exports jiffies alongside a
-// usage percentage.
+// registerCounters exports the /proc/net/dev counters and derives rates for the dashboard's live graph.
 
-// linkStats is one interface's counters plus the throughput derived from the
-// previous sample. HasRate is false on the first scrape after a restart.
+// linkStats is one interface's counters plus derived throughput; HasRate is false on the first scrape.
 type linkStats struct {
 	ifCounters
 	HasRate bool
@@ -46,19 +37,15 @@ type linkStats struct {
 	TxRate  float64
 }
 
-// registerCounters exports the /proc/net/dev counters and returns them so the
-// caller can fold them into the snapshot. A nil return means they were
-// unavailable (permission denied, or nothing matched).
+// registerCounters returns nil when the counters were unavailable (permission denied, or no match).
 func (c *Collector) registerCounters(ctx context.Context, api fileAPI, nodeName string, kept map[string]bool, reg prometheus.Registerer) map[string]linkStats {
-	if c.countersDisabled.Load() {
+	if c.countersGate.Off() {
 		return nil
 	}
 	raw, err := collector.ReadFile(ctx, api, procNetDev)
 	if err != nil {
-		if collector.IsPermissionError(err) && c.countersDisabled.CompareAndSwap(false, true) {
-			c.log.Warn("network throughput disabled: reading /proc/net/dev needs the os:admin role",
-				"node", nodeName, "err", err,
-				"hint", "give the monitor ServiceAccount the os:admin role; interface state is unaffected")
+		if collector.IsPermissionError(err) {
+			c.countersGate.Trip(nodeName, err)
 		}
 		return nil
 	}
@@ -75,10 +62,7 @@ func (c *Collector) registerCounters(ctx context.Context, api fileAPI, nodeName 
 	txErrors := counterVec("talos_net_link_tx_errors_total", "Transmit errors on the interface since boot.")
 	rxDropped := counterVec("talos_net_link_rx_dropped_total", "Received packets dropped on the interface since boot.")
 	txDropped := counterVec("talos_net_link_tx_dropped_total", "Transmitted packets dropped on the interface since boot.")
-	// These are rates computed inside the exporter, over its own scrape
-	// interval rather than a window the querier chooses. They exist for the
-	// dashboard's live graph; the HELP says so, so nobody prefers them to
-	// rate() by accident.
+	// Exporter-side rates for the live graph; the HELP says so they are not preferred to rate().
 	rxRate := collector.GaugeVec("talos_net_link_rx_bytes_per_second",
 		"Receive throughput, derived over the exporter's own scrape interval. Absent on the "+
 			"first scrape after a restart. For querying prefer rate(talos_net_link_rx_bytes_total[window]), "+
@@ -119,8 +103,7 @@ func (c *Collector) registerCounters(ctx context.Context, api fileAPI, nodeName 
 		if secs <= 0 {
 			continue
 		}
-		// A counter that went backwards means the interface was reset or
-		// replaced; skip rather than emit a negative or huge rate.
+		// A counter going backwards means the interface was reset: skip, never emit a wild rate.
 		rx, rxOK := perSecond(cur.rxBytes, old.rxBytes, secs)
 		tx, txOK := perSecond(cur.txBytes, old.txBytes, secs)
 		st := stats[name]
@@ -153,11 +136,10 @@ func (c *Collector) takePrev(node string, cur map[string]ifCounters, now time.Ti
 	return prev, ok
 }
 
-// parseProcNetDev parses /proc/net/dev, keeping only the named interfaces.
-// Lines are "iface: rx_bytes rx_packets rx_errs rx_drop ... tx_bytes ...".
+// parseProcNetDev parses "iface: rx... tx..." lines, keeping only named interfaces.
 func parseProcNetDev(raw string, kept map[string]bool) map[string]ifCounters {
 	out := map[string]ifCounters{}
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		name, rest, ok := strings.Cut(line, ":")
 		if !ok {
 			continue // the two header lines
@@ -194,10 +176,7 @@ type fileAPI interface {
 
 // Prune implements collector.Pruner: drop counter samples for departed nodes.
 func (c *Collector) Prune(live map[string]struct{}) {
-	// An empty set means discovery has not synced yet, not that the cluster
-	// is empty — pruning here would drop every node's state on a transient
-	// watch blip. app.prune() guards this too; the Pruner contract says
-	// implementations must, so they do.
+	// An empty live set means discovery has not synced; the Pruner contract says that prunes nothing.
 	if len(live) == 0 {
 		return
 	}
@@ -210,11 +189,9 @@ func (c *Collector) Prune(live map[string]struct{}) {
 	}
 }
 
-// Degraded implements collector.DegradedReporter. Not Stopped: link state and
-// addresses are still collected, so the round still reaches the node. Only the
-// /proc/net/dev byte counters - and therefore throughput - are off.
+// Degraded flags the counters off, not Stopped: link state and addresses still come from COSI.
 func (c *Collector) Degraded(string) []collector.Degradation {
-	if c.countersDisabled.Load() {
+	if c.countersGate.Off() {
 		return []collector.Degradation{{Reason: collector.ReasonPermission}}
 	}
 	return nil

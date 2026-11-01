@@ -1,17 +1,10 @@
-// Package k8svolumes watches PersistentVolumes so the node-side filesystem
-// usage collected from Talos can be named.
-//
-// Talos knows a mounted volume only by its PersistentVolume name, which is what
-// appears in the kubelet mount path. Everything a human needs — namespace,
-// claim, storage class, requested size — lives on the Kubernetes object. The two
-// are published as separate metrics joined on the `pv` label, which is the
-// idiomatic Prometheus shape: node facts come from the node, cluster facts from
-// the API server, and neither collector has to know about the other.
+// Package k8svolumes watches PersistentVolumes so node-side filesystem usage can be named by pv label.
 package k8svolumes
 
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -68,9 +61,7 @@ func New(log *slog.Logger, reg prometheus.Registerer) *Manager {
 	return m
 }
 
-// Run starts the informer and blocks until ctx is done. It never fails hard:
-// without PersistentVolume permissions the node-side usage metrics still work,
-// they are just unnamed.
+// Run starts the informer and never fails hard: without PV rights the usage metrics just stay unnamed.
 func (m *Manager) Run(ctx context.Context, cs kubernetes.Interface) {
 	factory := informers.NewSharedInformerFactory(cs, 10*time.Minute)
 	informer := factory.Core().V1().PersistentVolumes().Informer()
@@ -91,9 +82,7 @@ func (m *Manager) Volumes() map[string]Volume {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make(map[string]Volume, len(m.volumes))
-	for k, v := range m.volumes {
-		out[k] = v
-	}
+	maps.Copy(out, m.volumes)
 	return out
 }
 
@@ -118,8 +107,7 @@ func (m *Manager) upsert(obj any) {
 	n := len(m.volumes)
 	m.mu.Unlock()
 
-	// The normal PV lifecycle is Pending → Bound; without this delete the
-	// old label combination stays in the registry as a frozen series.
+	// Without this, a PV whose phase changed leaves the old label set frozen in the registry.
 	m.info.DeletePartialMatch(prometheus.Labels{"pv": v.Name})
 	m.info.WithLabelValues(v.Name, v.Namespace, v.Claim, v.StorageClass, v.Driver, v.Phase).Set(1)
 	m.capacity.WithLabelValues(v.Name).Set(float64(v.Capacity))

@@ -1,24 +1,4 @@
-// Package volumes collects Talos's volume layer — the layer between a raw disk
-// and a mounted filesystem.
-//
-// Naming: these are talos_machine_volume_*, not talos_volume_*. The latter was
-// already taken by the block collector for Kubernetes PersistentVolumes, which
-// are a completely different thing keyed by a `pv` label. Sharing the prefix
-// would have put PVs and Talos's own EPHEMERAL/STATE/META volumes in the same
-// metric family browser entry.
-//
-// The existing block collector answers "how full is this filesystem" from the
-// Mounts RPC. This one answers the questions that come before that: did the
-// volume reach its ready phase, is it encrypted, did an encryption key fail to
-// sync, and which disk is the system disk. A volume that fails to unlock is a
-// silent data-loss path — the filesystem simply is not there, so there is no
-// usage metric to go wrong, and SMART says nothing about it either.
-//
-// Cardinality note: Talos models a lot of things as volumes. On the reference
-// cluster 22 of 22 volumes exist per node but only three are real partitions;
-// the rest are directories, overlays and symlinks that are permanently ready.
-// Every series therefore carries a `type` label so the pseudo-volumes can be
-// filtered out in a query rather than silently dropped here.
+// Package volumes reports Talos's own volume layer (talos_machine_volume_*, not the PersistentVolumes).
 package volumes
 
 import (
@@ -40,12 +20,10 @@ import (
 // Name is the collector name (used in the --collectors.<name>.enabled and TTL flags).
 const Name = "volumes"
 
-// defaultTTL: a volume's phase changes at boot and on configuration changes,
-// but a failed unlock must not stay hidden for an hour.
+// defaultTTL: phases change at boot, but a failed unlock must not hide for an hour.
 const defaultTTL = 5 * time.Minute
 
-// Collector reads VolumeStatus, MountStatus and SystemDisk from the COSI
-// "runtime" namespace.
+// Collector reads VolumeStatus, MountStatus and SystemDisk from the COSI runtime namespace.
 type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
@@ -112,14 +90,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 
 // list lists a whole kind from the node's COSI state.
 
-// registerVolumes exports each volume's phase, size and encryption state.
-//
-// The phase is an _info metric keyed by (volume, type, phase) rather than a
-// number: the eight phases are not an ordered scale — waiting, located,
-// provisioned, prepared and ready are stages of a normal life cycle, while
-// failed and missing are faults. Encoding them as 0..7 would invite
-// meaningless comparisons. `talos_machine_volume_ready` carries the one boolean that
-// actually deserves an alert.
+// registerVolumes keys phase as an _info family: the eight phases are not an ordered scale.
 func registerVolumes(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Volumes) error {
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_machine_volume_info",
@@ -141,10 +112,7 @@ func registerVolumes(nodeName string, l resource.List, reg prometheus.Registerer
 		Name: "talos_machine_volume_encryption_failed_syncs",
 		Help: "Number of encryption keys that failed to sync for the volume. Non-zero means a key slot is stale and the volume may not unlock after the next key rotation.",
 	}, []string{"node", "volume"})
-	// The error message is free text and mutable, so it rides on its own
-	// _info metric rather than as a label on the status one: a changing
-	// message would otherwise move every volume's main series. Present only
-	// when a volume actually reports an error, so a healthy node has none.
+	// A mutable free-text error goes on its own _info so it cannot move the main series.
 	errInfo := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_machine_volume_error_info",
 		Help: "One series (value 1) per volume reporting an error, with the message. Absent on a healthy node.",
@@ -173,8 +141,7 @@ func registerVolumes(nodeName string, l resource.List, reg prometheus.Registerer
 		if !isReady {
 			notReadyTotal++
 		}
-		// Absent, not zero: a directory volume has no capacity, and a 0 would
-		// read as "an empty disk" in any aggregation.
+		// Absent, not zero: a directory volume has no capacity.
 		if spec.Size > 0 {
 			size.WithLabelValues(nodeName, id, kind).Set(float64(spec.Size))
 		}
@@ -200,8 +167,7 @@ func registerVolumes(nodeName string, l resource.List, reg prometheus.Registerer
 	return nil
 }
 
-// providerName returns "" for the none provider, so the UI can test presence
-// rather than comparing against a magic string.
+// providerName returns "" for none so the UI tests presence, not a magic string.
 func providerName(p block.EncryptionProviderType) string {
 	if p == block.EncryptionProviderNone {
 		return ""
@@ -209,13 +175,7 @@ func providerName(p block.EncryptionProviderType) string {
 	return p.String()
 }
 
-// registerMounts exports mount metadata.
-//
-// This deliberately does NOT export usage bytes: MountStatus does not carry
-// them, and the block collector already exports size/available/used for every
-// mount from the Mounts RPC. What is unique here is the metadata — read-only,
-// project quota support, and which encryption provider the mount came up
-// through.
+// registerMounts exports mount metadata only; usage bytes come from the block collector.
 func registerMounts(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Volumes) error {
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_mount_info",

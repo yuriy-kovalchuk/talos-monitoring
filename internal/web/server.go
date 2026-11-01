@@ -1,5 +1,4 @@
-// Package web exposes the HTTP endpoints: /metrics, /health, /ready and
-// the dashboard UI (templates and assets embedded from static/).
+// Package web serves /metrics, /health, /ready and the dashboard from embedded assets.
 package web
 
 import (
@@ -52,9 +51,7 @@ func NewRouter(log *slog.Logger, reg prometheus.Gatherer, ready func() bool, lis
 	mux.Handle("GET /partials/overview", http.HandlerFunc(d.overviewPartial))
 	mux.Handle("GET /partials/nodes/{name}/{card}", http.HandlerFunc(d.nodePartial))
 
-	// Static assets, embedded in the binary. Fonts are vendored rather than
-	// pulled from Google's CDN so the dashboard renders on a cluster with no
-	// egress (finding 5.4).
+	// Fonts are vendored, not from a CDN, so the dashboard renders on a cluster with no egress.
 	for _, dir := range []string{"css", "js", "fonts"} {
 		sub, err := fs.Sub(static.FS, dir)
 		if err != nil {
@@ -67,9 +64,7 @@ func NewRouter(log *slog.Logger, reg prometheus.Gatherer, ready func() bool, lis
 	return securityHeaders(logRequests(log, mux))
 }
 
-// csp is deliberately strict: every asset is served from this binary, so
-// nothing needs to load from anywhere else. 'unsafe-inline' covers the style
-// attributes the templates use for bar widths; there is no inline script.
+// Every asset comes from this binary, so the CSP needs no external source and there is no inline script.
 const csp = "default-src 'none'; " +
 	"script-src 'self'; " +
 	"style-src 'self' 'unsafe-inline'; " +
@@ -80,11 +75,7 @@ const csp = "default-src 'none'; " +
 	"frame-ancestors 'none'; " +
 	"base-uri 'none'"
 
-// securityHeaders hardens the unauthenticated surface. The dashboard and
-// /metrics carry chassis serials, system UUIDs and disk WWIDs and are meant to
-// be cluster-internal (network isolation is the operator's responsibility),
-// but headers cost nothing and remove the easy problems: MIME sniffing,
-// framing, referrer leaks.
+// securityHeaders hardens an unauthenticated, cluster-internal surface; isolation stays the operator's job.
 func securityHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hdr := w.Header()
@@ -96,31 +87,13 @@ func securityHeaders(h http.Handler) http.Handler {
 	})
 }
 
-// staticMaxAge is how long a browser may reuse an asset without asking. The
-// assets are embedded in the binary, so they only change when the binary does,
-// and the ETag below is derived from the build so a new version invalidates
-// them immediately.
+// staticMaxAge is safe because assets are embedded and the ETag comes from their content.
 const staticMaxAge = 24 * time.Hour
 
-// assetsETag hashes the embedded asset tree once, at startup.
-//
-// It used to be the build identity (version + commit), on the reasoning that
-// assets are baked into the binary and change together. That is true of a
-// release, and false of every development build: editing app.js without
-// committing leaves the commit — and so the ETag — unchanged, while
-// Cache-Control says the browser may reuse the old file for a day. That is
-// exactly how a stale app.js kept the node switcher from working after its
-// handler moved out of the markup.
-//
-// Hashing the content cannot get this wrong, and costs one walk of a few
-// hundred kilobytes at boot.
-// assetVersion is computed once: hashing the tree on every request would be
-// pointless work for a value that cannot change while the process runs.
+// assetsETag hashes the asset tree once: a build-identity ETag served a stale app.js for a day.
 var assetVersion = sync.OnceValue(assetsETag)
 
-// AssetVersion identifies the embedded asset tree. Templates append it to
-// asset URLs so a new build cannot be served from a stale cache, and
-// cacheStatic uses it as the ETag.
+// AssetVersion is appended to asset URLs and used as the cacheStatic ETag.
 func AssetVersion() string { return assetVersion() }
 
 func assetsETag() string {
@@ -138,25 +111,20 @@ func assetsETag() string {
 		return nil
 	})
 	if err != nil {
-		// Unreachable for an embedded FS; fall back to the build identity
-		// rather than serving no validator at all.
+		// Unreachable for an embedded FS; fall back to the build identity.
 		return `"` + version.Version + "-" + version.Commit + `"`
 	}
 	return `"` + hex.EncodeToString(h.Sum(nil))[:16] + `"`
 }
 
-// cacheStatic adds validators to the embedded assets. Without them every page
-// load re-fetched the full htmx bundle,
-// plus the fonts.
+// cacheStatic adds validators so page loads do not re-fetch htmx and the fonts.
 func cacheStatic(h http.Handler) http.Handler {
 	etag := AssetVersion()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(int(staticMaxAge.Seconds())))
 		w.Header().Set("ETag", etag)
-		// If-None-Match is a comma-separated list, and each entry may carry a
-		// weak validator prefix. A substring test would also match a tag that
-		// merely contains ours.
-		for _, candidate := range strings.Split(r.Header.Get("If-None-Match"), ",") {
+		// If-None-Match is a list whose entries may be weak; a substring test would over-match.
+		for candidate := range strings.SplitSeq(r.Header.Get("If-None-Match"), ",") {
 			candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
 			if candidate == etag || candidate == "*" {
 				w.WriteHeader(http.StatusNotModified)

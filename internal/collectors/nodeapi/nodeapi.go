@@ -1,9 +1,4 @@
-// Package nodeapi collects the slowly-changing per-node status from the
-// Talos machine service (Version, Time and SystemStat boot/process data)
-// and exposes it as Prometheus metrics.
-//
-// The fast-changing CPU data (per-mode time, usage, live frequency) lives in the
-// cpu collector; nodeapi is re-collected on the scrape interval.
+// Package nodeapi collects slow-changing node status: version, uptime, processes and load.
 package nodeapi
 
 import (
@@ -27,8 +22,7 @@ import (
 // Name is the registry name of the nodeapi collector.
 const Name = "nodeapi"
 
-// machineAPI is the subset of the per-node Talos client used by the
-// collector (seam for tests).
+// machineAPI is the per-node Talos client subset the collector uses (test seam).
 type machineAPI interface {
 	Version(ctx context.Context) (*machinepb.VersionResponse, error)
 	Time(ctx context.Context) (*timepb.TimeResponse, error)
@@ -64,8 +58,7 @@ type Collector struct {
 	// snap receives the typed identity and liveness alongside the metrics.
 	snap *snapshot.Store
 
-	// sysstat shares the SystemStat response with the cpu collector, which
-	// wants the per-core CPU time out of the same message.
+	// sysstat shares the SystemStat response with cpu, which wants the per-core jiffies.
 	sysstat *sysstat.Cache
 }
 
@@ -96,12 +89,7 @@ func (c *Collector) Name() string { return Name }
 // Class implements collector.Collector.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
-// Collect calls the machine service RPCs and registers:
-//
-//	talos_node_version_info{node,version,sha,arch,built} 1
-//	talos_node_uptime_seconds{node}
-//	talos_node_processes{node,state}
-//	talos_node_load1{node}, talos_node_load5{node}, talos_node_load15{node}
+// Collect registers version info, uptime, process counts and load averages.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
 	api := c.newAPI(node)
 	name := node.Node.Name
@@ -164,11 +152,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	p.WithLabelValues(name, "blocked").Set(float64(stat.GetProcessBlocked()))
 	reg.MustRegister(p)
 
-	// Load average is best-effort: it is the least important thing this
-	// collector reports, and losing the version, uptime and process counts
-	// because of it would be a bad trade. A failure leaves the series absent
-	// rather than reporting a zero, which on a load metric would read as an
-	// idle machine.
+	// Load is best-effort: a failure leaves the series absent rather than reading as idle.
 	load1, load5, load15, haveLoad := 0.0, 0.0, 0.0, false
 	if la, err := api.LoadAvg(ctx); err == nil && len(la.GetMessages()) > 0 {
 		m := la.GetMessages()[0]

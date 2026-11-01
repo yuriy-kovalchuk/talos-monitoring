@@ -2,41 +2,33 @@ package sensors
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collector"
 )
 
-// layoutTTL bounds how long a node's discovered sensor layout is reused.
-//
-// Chip names, sensor labels and threshold values do not change while a machine
-// is running: they come from the driver and the firmware. Rediscovering them on
-// every scrape was what made this the most expensive collector in the project
-// (~30 sequential RPCs per node per scrape, half of all Talos API traffic).
+// layoutTTL bounds layout reuse: chip names, labels and thresholds do not change while a machine runs.
 const layoutTTL = time.Hour
 
 // readConcurrency bounds the live value reads.
 const readConcurrency = 8
 
-// limitFiles are the threshold suffixes read once per sensor. Availability
-// varies by driver: coretemp and nvme publish them, k10temp and amdgpu do not,
-// so a sensor with no limit is normal and must render as "no threshold" rather
-// than as a limit of zero.
+// limitFiles are read once per sensor; availability varies by driver, so having none is normal.
 var limitFiles = map[string]string{
 	"crit": "critical",
 	"max":  "max",
 	"min":  "min",
-	// A GPU's board power limit is a cap, not a max: amdgpu publishes
-	// power1_cap (what it is set to) and power1_cap_max (what it may be set
-	// to), and neither appears under the names above.
+	// amdgpu's board power limit is a cap (power1_cap), not a max.
 	"cap":     "cap",
 	"cap_max": "cap max",
 }
 
-// sensorMeta is everything about a sensor that does not change between
-// scrapes, discovered once and reused.
+// sensorMeta is what does not change between scrapes, discovered once.
 type sensorMeta struct {
 	Chip      string // sysfs directory, e.g. /sys/class/hwmon/hwmon0
 	ChipName  string // driver name, e.g. coretemp
@@ -81,9 +73,8 @@ func (c *layoutCache) put(node string, l layout) {
 	c.by[node] = l
 }
 
-// discover walks the sysfs roots once and returns every sensor with its static
-// description. This is the expensive path; it runs at most once per layoutTTL.
-func (c *Collector) discover(ctx context.Context, api fileAPI, node string) ([]sensorMeta, error) {
+// discover walks the sysfs roots; the expensive path, at most once per layoutTTL.
+func (c *Collector) discover(ctx context.Context, api fileAPI) ([]sensorMeta, error) {
 	hwmon, err := discoverHwmonSensors(ctx, api)
 	if err != nil {
 		return nil, err
@@ -92,7 +83,7 @@ func (c *Collector) discover(ctx context.Context, api fileAPI, node string) ([]s
 	if err != nil {
 		return nil, err
 	}
-	out := append(hwmon, thermal...)
+	out := slices.Concat(hwmon, thermal)
 
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Chip != out[j].Chip {
@@ -123,8 +114,7 @@ func discoverHwmonSensors(ctx context.Context, api fileAPI) ([]sensorMeta, error
 	return out, nil
 }
 
-// discoverChipSensors lists one hwmon chip's files and builds a sensorMeta for
-// each one it recognises.
+// discoverChipSensors builds a sensorMeta for each file it recognises on a chip.
 func discoverChipSensors(ctx context.Context, api fileAPI, chip, link string) ([]sensorMeta, error) {
 	pci := pciBDF(link)
 	files, err := listDir(ctx, api, chip)
@@ -137,7 +127,7 @@ func discoverChipSensors(ctx context.Context, api fileAPI, chip, link string) ([
 	}
 
 	chipName := chip[strings.LastIndex(chip, "/")+1:]
-	if v, err := readScalar(ctx, api, chip+"/name"); err == nil && v != "" {
+	if v, err := collector.ReadFileTrimmed(ctx, api, chip+"/name"); err == nil && v != "" {
 		chipName = v
 	}
 
@@ -150,19 +140,14 @@ func discoverChipSensors(ctx context.Context, api fileAPI, chip, link string) ([
 	return out, nil
 }
 
-// buildHwmonSensor builds one sensor's static description from its "_input"
-// (or "_average") base name, or reports ok=false when base does not name a
-// sensor reading at all, or is the rolling-mean half of a pair this chip
-// already reports as an instantaneous reading.
+// buildHwmonSensor builds one sensor's description from its _input base name.
 func buildHwmonSensor(ctx context.Context, api fileAPI, chip, chipName, pci, base string, byBase map[string]bool) (sensorMeta, bool) {
 	sm := inputRe.FindStringSubmatch(base)
 	if sm == nil {
 		return sensorMeta{}, false
 	}
 	sensor := sm[1] + sm[2]
-	// A chip that publishes both reports the instantaneous value in _input and
-	// a rolling mean in _average; take the reading, not the mean, and never
-	// both as two sensors.
+	// Where a chip has both, _input is the reading and _average the rolling mean.
 	if sm[3] == "average" && byBase[sensor+"_input"] {
 		return sensorMeta{}, false
 	}
@@ -172,7 +157,7 @@ func buildHwmonSensor(ctx context.Context, api fileAPI, chip, chipName, pci, bas
 		InputPath: chip + "/" + base,
 		Limits:    map[string]float64{},
 	}
-	if label, err := readScalar(ctx, api, chip+"/"+sensor+"_label"); err == nil {
+	if label, err := collector.ReadFileTrimmed(ctx, api, chip+"/"+sensor+"_label"); err == nil {
 		meta.Label = label
 	}
 	applySensorLimits(ctx, api, chip, sensor, sm[1], byBase, &meta)
@@ -180,15 +165,14 @@ func buildHwmonSensor(ctx context.Context, api fileAPI, chip, chipName, pci, bas
 	return meta, true
 }
 
-// applySensorLimits fills in whichever threshold files (crit/max/min/cap/cap_max)
-// this sensor actually publishes; a missing file means "no threshold", not zero.
+// applySensorLimits reads whichever threshold files this sensor publishes.
 func applySensorLimits(ctx context.Context, api fileAPI, chip, sensor, family string, byBase map[string]bool, meta *sensorMeta) {
 	for suffix, name := range limitFiles {
 		f := sensor + "_" + suffix
 		if !byBase[f] {
 			continue
 		}
-		if raw, err := readScalar(ctx, api, chip+"/"+f); err == nil {
+		if raw, err := collector.ReadFileTrimmed(ctx, api, chip+"/"+f); err == nil {
 			if v, ok := scaleValue(raw, family); ok {
 				meta.Limits[name] = v
 			}
@@ -196,8 +180,7 @@ func applySensorLimits(ctx context.Context, api fileAPI, chip, sensor, family st
 	}
 }
 
-// applySensorAlarm records whichever alarm file (crit_alarm preferred over
-// alarm) this sensor publishes, or none.
+// applySensorAlarm records the alarm file, preferring crit_alarm over alarm.
 func applySensorAlarm(chip, sensor string, byBase map[string]bool, meta *sensorMeta) {
 	for _, a := range []string{sensor + "_crit_alarm", sensor + "_alarm"} {
 		if byBase[a] {
@@ -207,8 +190,7 @@ func applySensorAlarm(chip, sensor string, byBase map[string]bool, meta *sensorM
 	}
 }
 
-// discoverThermalZones walks every ACPI thermal zone and returns its
-// synthetic "temp" sensor.
+// discoverThermalZones returns a synthetic "temp" sensor per ACPI thermal zone.
 func discoverThermalZones(ctx context.Context, api fileAPI) ([]sensorMeta, error) {
 	zones, err := listDir(ctx, api, thermalRoot)
 	if err != nil {
@@ -224,11 +206,10 @@ func discoverThermalZones(ctx context.Context, api fileAPI) ([]sensorMeta, error
 	return out, nil
 }
 
-// buildThermalZone builds one thermal zone's static description, including
-// its trip-point-derived limits.
+// buildThermalZone builds a zone's description, including trip-point limits.
 func buildThermalZone(ctx context.Context, api fileAPI, zone string) sensorMeta {
 	name := zone[strings.LastIndex(zone, "/")+1:]
-	if t, err := readScalar(ctx, api, zone+"/type"); err == nil && t != "" {
+	if t, err := collector.ReadFileTrimmed(ctx, api, zone+"/type"); err == nil && t != "" {
 		name = t
 	}
 	meta := sensorMeta{
@@ -240,16 +221,14 @@ func buildThermalZone(ctx context.Context, api fileAPI, zone string) sensorMeta 
 	return meta
 }
 
-// applyThermalTripPoints reads a thermal zone's trip points and folds them
-// into meta.Limits: the "critical" trip point is the equivalent of a chip's
-// temp*_crit, and the first non-critical one becomes "max".
+// applyThermalTripPoints folds trip points into Limits: critical, else the first non-critical as max.
 func applyThermalTripPoints(ctx context.Context, api fileAPI, zone string, meta *sensorMeta) {
-	for i := 0; i < 8; i++ {
-		tt, err := readScalar(ctx, api, zone+"/trip_point_"+strconv.Itoa(i)+"_type")
+	for i := range 8 {
+		tt, err := collector.ReadFileTrimmed(ctx, api, zone+"/trip_point_"+strconv.Itoa(i)+"_type")
 		if err != nil {
 			break
 		}
-		raw, err := readScalar(ctx, api, zone+"/trip_point_"+strconv.Itoa(i)+"_temp")
+		raw, err := collector.ReadFileTrimmed(ctx, api, zone+"/trip_point_"+strconv.Itoa(i)+"_temp")
 		if err != nil {
 			continue
 		}
@@ -267,9 +246,7 @@ func applyThermalTripPoints(ctx context.Context, api fileAPI, zone string, meta 
 
 // prune drops layouts for nodes no longer in the cluster.
 func (c *layoutCache) prune(live map[string]struct{}) {
-	// An empty set means discovery has not synced yet, not that the cluster is
-	// empty — pruning here would drop every node's discovered sensor layout on
-	// a transient watch blip, making the next scrape rediscover all of them.
+	// An empty live set means discovery has not synced; pruning would force a full rediscover.
 	if len(live) == 0 {
 		return
 	}

@@ -1,11 +1,4 @@
-// Package health collects the node's own verdict on whether it is working:
-// the init system's per-service state, the aggregated machine stage and
-// readiness, and any diagnostic warnings Talos is currently raising.
-//
-// This is the only first-party "is the OS actually up" signal. Every hardware
-// panel can be green — sensors nominal, disks present, links carrying — while
-// etcd or the kubelet is dead, because nothing else the exporter collects
-// looks at the services at all.
+// Package health reports the node's own verdict: service state, machine stage and diagnostics.
 package health
 
 import (
@@ -27,8 +20,7 @@ import (
 // Name is the collector name (used in the --collectors.<name>.enabled and TTL flags).
 const Name = "health"
 
-// Collector reads Services, MachineStatus and Diagnostics from the COSI
-// "runtime" namespace.
+// Collector reads Services, MachineStatus and Diagnostics from the COSI runtime namespace.
 type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
@@ -42,8 +34,7 @@ func New() *Collector {
 	return &Collector{state: collector.DefaultState}
 }
 
-// WithSnapshot points the collector at a snapshot store. Returns the receiver
-// so it can be chained in the registry list.
+// WithSnapshot points the collector at a snapshot store and returns the receiver to chain.
 func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 	c.snap = s
 	return c
@@ -52,18 +43,10 @@ func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 // Name implements collector.Collector.
 func (c *Collector) Name() string { return Name }
 
-// Class implements collector.Collector.
-//
-// Live, not Inventory: a dead service is the thing an operator wants to know
-// about soonest, and the inventory cadence would hide a stopped etcd for
-// minutes. Three COSI lists per node per scrape is a cheap price for that.
+// Live, not Inventory: a stopped etcd must not wait for the inventory cadence.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
-// Collect lists the three kinds and registers them.
-//
-// An empty list is not an error, matching every other collector here: the RPC
-// failing is the failure. Diagnostics being empty is in fact the healthy
-// state, and a node in maintenance mode legitimately runs few services.
+// Collect lists the three kinds; an empty list is not an error, only a failed RPC is.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
 	ctx = talosclient.WithNode(ctx, node.Node.IP)
 	st := c.state(node)
@@ -99,32 +82,9 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 	return nil
 }
 
-// list lists a whole kind from the node's COSI state (an empty ID in the
-// metadata means "all resources of this kind").
+// list lists every resource of a kind (an empty ID means all of them).
 
-// registerServices exports the init system's per-service state.
-//
-// Running, healthy and unknown are three separate families rather than one
-// encoded state gauge, because Talos genuinely reports three independent
-// booleans and collapsing them loses information.
-//
-// "unknown" means nothing ever checked, not that a check failed: Talos sets it
-// from `status.Healthy == nil` (system/health/status.go), and Healthy is a
-// pointer that stays nil until a health check produces a result. Two kinds of
-// service never produce one, permanently:
-//
-//   - health checks are opt-in through the optional HealthcheckedService
-//     interface (system/service.go); `dashboard` does not implement it;
-//   - extension services cannot have one at all — the extension service spec
-//     (machinery/extensions/services) has no health-check field, so every
-//     `ext-*` service is unknown by construction.
-//
-// Both therefore report healthy=false with unknown=true forever, and the alert
-// that means "something is broken" is
-//
-//	talos_service_healthy == 0 and talos_service_health_unknown == 0
-//
-// Alerting on healthy == 0 alone fires permanently on a healthy cluster.
+// registerServices exports running, healthy and unknown as three families: Talos reports three booleans.
 func registerServices(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Health) error {
 	g := func(name, help string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help},
@@ -158,11 +118,7 @@ func registerServices(nodeName string, l resource.List, reg prometheus.Registere
 	return nil
 }
 
-// registerMachine exports the aggregated boot stage and readiness.
-//
-// The stage is a mutable string attribute, so it rides on its own _info metric
-// per the metric contract: a node moving from running to upgrading moves the
-// series rather than changing a value that PromQL cannot interpret.
+// registerMachine exports the boot stage and readiness; stage is a mutable _info attribute.
 func registerMachine(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Health) error {
 	stage := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_machine_stage_info",
@@ -190,8 +146,7 @@ func registerMachine(nodeName string, l resource.List, reg prometheus.Registerer
 		spec := ms.TypedSpec()
 		stage.WithLabelValues(nodeName, spec.Stage.String()).Set(1)
 		ready.WithLabelValues(nodeName).Set(collector.BoolValue(spec.Status.Ready))
-		// Zero-initialised so `> 0` works on a healthy node, where the
-		// _info metric below has no series at all.
+		// Zero-initialised so > 0 works on a healthy node with no _info series.
 		unmetCount.WithLabelValues(nodeName).Set(float64(len(spec.Status.UnmetConditions)))
 
 		view.Stage = spec.Stage.String()
@@ -207,15 +162,7 @@ func registerMachine(nodeName string, l resource.List, reg prometheus.Registerer
 	return nil
 }
 
-// registerDiagnostics exports Talos's own warnings.
-//
-// The count is zero-initialised because the per-warning _info metric has no
-// series on a healthy node, and "no series" is indistinguishable from "the
-// collector never ran" without it.
-//
-// The spec also carries a Details slice of free-text remediation lines. It is
-// deliberately not collected: it is unbounded prose, and the ID plus message
-// already identify the warning (each maps to talos.dev/diagnostic/<id>).
+// registerDiagnostics exports Talos's warnings; the free-text Details are not collected.
 func registerDiagnostics(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Health) error {
 	count := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_diagnostics",
@@ -242,6 +189,5 @@ func registerDiagnostics(nodeName string, l resource.List, reg prometheus.Regist
 	return nil
 }
 
-// health declares no DefaultTTL: it follows --scrape-interval like the other
-// Live collectors.
+// health follows --scrape-interval like the other Live collectors.
 var _ collector.Collector = (*Collector)(nil)

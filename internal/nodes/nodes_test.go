@@ -33,7 +33,7 @@ func newTestManager(t *testing.T, objs ...runtime.Object) (*Manager, *prometheus
 
 func testNode(name, ip string, labels map[string]string) *corev1.Node {
 	return &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels},
+		Name: name, Labels: labels,
 		Status: corev1.NodeStatus{
 			Addresses: []corev1.NodeAddress{
 				{Type: corev1.NodeInternalIP, Address: ip},
@@ -151,7 +151,7 @@ func TestFromK8s(t *testing.T) {
 		{
 			name: "no ip, hostname from addresses",
 			in: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{Name: "n2"},
+				Name: "n2",
 				Status: corev1.NodeStatus{
 					Addresses: []corev1.NodeAddress{{Type: corev1.NodeHostName, Address: "host-2"}},
 				},

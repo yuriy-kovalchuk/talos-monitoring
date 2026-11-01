@@ -1,8 +1,4 @@
-// Package version carries build-time metadata injected via -ldflags:
-//
-//	-X .../internal/version.Version=...
-//	-X .../internal/version.Commit=...
-//	-X .../internal/version.BuildDate=...
+// Package version carries build metadata injected by -ldflags (Version, Commit, BuildDate).
 package version
 
 import "fmt"

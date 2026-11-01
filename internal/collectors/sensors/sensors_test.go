@@ -353,7 +353,7 @@ func TestLayoutIsDiscoveredOnceAndValuesRereadEachScrape(t *testing.T) {
 	t0 := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	c.now = func() time.Time { return t0 }
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := c.Collect(context.Background(), testNode(), prometheus.NewRegistry()); err != nil {
 			t.Fatalf("collect %d: %v", i, err)
 		}
@@ -714,9 +714,7 @@ func TestDegradedReflectsSelfDisable(t *testing.T) {
 	if d := c.Degraded("n1"); len(d) != 0 {
 		t.Fatalf("a live collector reported %v", d)
 	}
-	if err := c.disable("n1"); err != nil {
-		t.Fatalf("disable: %v", err)
-	}
+	c.gate.Trip("n1", errors.New("permission denied"))
 	d := c.Degraded("n1")
 	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || !d[0].Stopped {
 		t.Errorf("Degraded = %+v, want one stopped %q degradation", d, collector.ReasonPermission)

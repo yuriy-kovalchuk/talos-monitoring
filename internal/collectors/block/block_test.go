@@ -279,7 +279,7 @@ func TestRegisterMountsClassifiesAndFilters(t *testing.T) {
 
 func TestDiskInventoryThrottledButAlwaysRegistered(t *testing.T) {
 	c := testCollector(fixtures(), mount("/dev/nvme0n1p4", 1<<30, 1<<29, "/var"))
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		reg := prometheus.NewRegistry()
 		if err := c.Collect(context.Background(), testNode(), reg); err != nil {
 			t.Fatalf("collect %d: %v", i, err)

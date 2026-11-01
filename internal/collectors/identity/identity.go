@@ -1,17 +1,4 @@
-// Package identity collects what software a node is actually running: the
-// Image Factory schematic and system extensions baked into its image, the boot
-// entry it came up on, its kernel command line, and its security posture.
-//
-// This answers the fleet question no hardware panel can: "is this node running
-// the image I think it is". A partial upgrade, a node rebuilt from a stale
-// schematic, or a machineconfig kernel arg that never took effect are all
-// invisible everywhere else — the node is up, the sensors are nominal, and the
-// services are healthy.
-//
-// Deliberately NOT collected here: the Versions.runtime resource. It carries a
-// single entry, Talos <version>, which the nodeapi collector already exports as
-// talos_node_version_info from the Version machine API RPC. Two sources for one
-// quantity is the antipattern this project retracts resources for.
+// Package identity reports what software a node runs: schematic, extensions, boot entry, security.
 package identity
 
 import (
@@ -36,18 +23,13 @@ const Name = "identity"
 // defaultTTL: an image does not change without a reboot.
 const defaultTTL = time.Hour
 
-// Virtual extension names. Talos reports both through ExtensionStatuses, but
-// neither is a system extension: schematic is the Image Factory build id, and
-// modules.dep is the combined module dependency index. They are exported as
-// extensions because that is what the node reports, but the schematic also
-// gets its own family, and neither should be counted as installed software.
+// Talos reports schematic and modules.dep as extensions; neither is installed software.
 const (
 	schematicName = "schematic"
 	modulesDep    = "modules.dep"
 )
 
-// Collector reads the image and security resources from the COSI "runtime"
-// namespace.
+// Collector reads the image and security resources from the COSI runtime namespace.
 type Collector struct {
 	// state returns the COSI state to query for a node; overridable in tests.
 	state func(node *collector.NodeClient) state.CoreState
@@ -61,8 +43,7 @@ func New() *Collector {
 	return &Collector{state: collector.DefaultState}
 }
 
-// WithSnapshot points the collector at a snapshot store. Returns the receiver
-// so it can be chained in the registry list.
+// WithSnapshot points the collector at a snapshot store and returns the receiver to chain.
 func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 	c.snap = s
 	return c
@@ -77,9 +58,7 @@ func (c *Collector) Class() collector.Class { return collector.Inventory }
 // DefaultTTL implements collector.DefaultTTLer.
 func (c *Collector) DefaultTTL() time.Duration { return defaultTTL }
 
-// Collect lists the four kinds and registers them. An empty list is not an
-// error: a node with no extensions, or one booted without UKI, simply has
-// nothing to report for that kind.
+// Collect lists the four kinds; an empty list is not an error, only a failed RPC is.
 func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg prometheus.Registerer) error {
 	ctx = talosclient.WithNode(ctx, node.Node.IP)
 	st := c.state(node)
@@ -121,15 +100,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 
 // list lists a whole kind from the node's COSI state.
 
-// registerExtensions exports the installed extensions and the schematic.
-//
-// The schematic gets its own family because it is the one value that answers
-// "are these nodes running the same image":
-//
-//	count(count by (schematic) (talos_schematic_info))
-//
-// is the number of distinct images across the fleet. Leaving it buried as one
-// row among the extensions would make that a string-matching exercise.
+// registerExtensions exports the extensions and gives the schematic its own family.
 func registerExtensions(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Identity) error {
 	ext := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_extension_info",
@@ -168,11 +139,7 @@ func registerExtensions(nodeName string, l resource.List, reg prometheus.Registe
 	return nil
 }
 
-// registerBoot exports the kernel command line and the booted entry.
-//
-// The cmdline rides as a single label. It is long (~200 characters) but there
-// is exactly one series per node, and comparing it across the fleet is the
-// only way to catch a machineconfig kernel argument that never took effect.
+// registerBoot exports the cmdline as one label per node, comparable across the fleet.
 func registerBoot(nodeName string, cmdlines, booted resource.List, reg prometheus.Registerer, view *snapshot.Identity) error {
 	cmdlineG := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_kernel_cmdline_info",
@@ -203,12 +170,7 @@ func registerBoot(nodeName string, cmdlines, booted resource.List, reg prometheu
 	return nil
 }
 
-// registerSecurity exports the node's security posture.
-//
-// The three booleans are gauges; SELinux and FIPS are multi-valued states, so
-// each rides on its own _info metric per the metric contract — a node moving
-// from permissive to enforcing moves the series rather than changing an opaque
-// number whose ordering PromQL cannot know.
+// registerSecurity exports the posture; SELinux and FIPS are multi-valued, so they are _info.
 func registerSecurity(nodeName string, l resource.List, reg prometheus.Registerer, view *snapshot.Identity) error {
 	b := func(name, help string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help}, []string{"node"})

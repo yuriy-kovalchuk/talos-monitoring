@@ -18,8 +18,7 @@ import (
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/snapshot"
 )
 
-// memAPI is the part of the Talos client the memory collector uses for live
-// usage (test seam).
+// memAPI is the Talos client part the memory collector uses for live usage (test seam).
 type memAPI interface {
 	Memory(ctx context.Context) (*machinepb.MemoryResponse, error)
 }
@@ -30,18 +29,10 @@ func (m memTalosAPI) Memory(ctx context.Context) (*machinepb.MemoryResponse, err
 	return m.client.MachineClient.Memory(ctx, &empty.Empty{})
 }
 
-// memInventoryTTL is how often the DIMM inventory is re-listed. The collector
-// itself runs on the live cadence for usage; the COSI list behind the DIMM
-// table changes only when someone opens the machine.
+// memInventoryTTL is how often the DIMM inventory is re-listed; the live half runs every tick.
 const memInventoryTTL = time.Hour
 
-// MemoryCollector reports both live memory usage (machine API Memory, every
-// tick) and the DIMM inventory (COSI hardware.MemoryModule, re-listed at most
-// every memInventoryTTL and re-registered from cache in between).
-//
-// The two live in one collector because they answer the same question from a
-// user's point of view — "what is this machine's memory?" — but they change on
-// completely different timescales, hence the internal throttle.
+// MemoryCollector reports live usage every tick and the DIMM inventory every memInventoryTTL.
 type MemoryCollector struct {
 	*Collector
 	newAPI func(node *collector.NodeClient) memAPI
@@ -50,23 +41,15 @@ type MemoryCollector struct {
 	cache map[string]memInventory // keyed by node name
 }
 
-// memInventory is a node's last successful DIMM listing, kept so the metric can
-// be re-registered on ticks that do not re-list.
+// memInventory is a node's last successful DIMM listing, re-registered between re-lists.
 type memInventory struct {
 	ts      time.Time
 	modules []moduleRow // identity labels plus measurements
-	// failedAt is when the last re-list failed, zero when the last one
-	// succeeded. ts stays at the last success so the next tick retries;
-	// failedAt is what makes a long-running failure visible instead of silent.
+	// failedAt marks a failing re-list so a long failure is visible; ts stays at the last success.
 	failedAt time.Time
 }
 
-// WithSnapshot points the collector at a snapshot store.
-//
-// Shadows the embedded Collector's method deliberately: that one returns
-// *Collector, so NewMemory().WithSnapshot(s) would hand the registry the base
-// collector and silently drop this type's Collect, taking /proc/meminfo and
-// the DIMM inventory with it.
+// WithSnapshot shadows the embedded method: returning *Collector would drop this type's Collect.
 func (m *MemoryCollector) WithSnapshot(s *snapshot.Store) *MemoryCollector {
 	m.snap = s
 	return m
@@ -87,8 +70,7 @@ func NewMemory() *MemoryCollector {
 // Class implements collector.Collector: usage is live data.
 func (m *MemoryCollector) Class() collector.Class { return collector.Live }
 
-// DefaultTTL implements collector.DefaultTTLer: follow the scrape interval by
-// returning 0, so --scrape-interval and --collectors.memory.ttl both apply.
+// DefaultTTL returns 0 so --scrape-interval and the per-collector TTL both apply.
 func (m *MemoryCollector) DefaultTTL() time.Duration { return 0 }
 
 // Collect registers the live memory gauges and the DIMM inventory.
@@ -105,8 +87,7 @@ func (m *MemoryCollector) Collect(ctx context.Context, node *collector.NodeClien
 	mi := resp.GetMessages()[0].GetMeminfo()
 	registerMemInfo(name, mi, reg)
 	if m.snap != nil {
-		// meminfo reports kibibytes; the snapshot carries bytes, like the
-		// metrics.
+		// meminfo reports kibibytes; the snapshot and metrics carry bytes.
 		const kib = 1024
 		mem := snapshot.Memory{
 			Present:     true,
@@ -134,14 +115,10 @@ func (m *MemoryCollector) Collect(ctx context.Context, node *collector.NodeClien
 			m.cache[name] = cached
 			m.mu.Unlock()
 		} else if !ok {
-			// Nothing cached and the list failed: usage still registered above,
-			// so report the failure without discarding it.
+			// Nothing cached and the list failed: usage is registered, so report the failure.
 			return err
 		} else {
-			// Cached modules are still the best data available, so the scrape
-			// does not fail — but the error used to be dropped here, so a DIMM
-			// list that had been unlistable for hours counted as a success,
-			// moved no error counter and logged nothing.
+			// Cached DIMMs are still the best data, but the error must be counted and logged, not dropped.
 			cached.failedAt = time.Now()
 			m.mu.Lock()
 			m.cache[name] = cached
@@ -192,13 +169,7 @@ func (m *MemoryCollector) listModules(ctx context.Context, node *collector.NodeC
 	return memoryModuleValues(node.Node.Name, list)
 }
 
-// memInfoGauges maps a metric name to the /proc/meminfo field behind it.
-// Everything the dashboard shows must be queryable in Prometheus too (§1.1), and
-// the export deliberately goes wider than the UI: meminfo is bounded and
-// low-cardinality, so there is no reason to withhold any of it.
-//
-// meminfo reports kibibytes; these are exported in bytes per the base-unit
-// naming convention.
+// memInfoGauges maps metrics to /proc/meminfo fields in bytes; the export is wider than the UI (§1.1).
 func registerMemInfo(node string, mi *machinepb.MemInfo, reg prometheus.Registerer) {
 	fields := []struct {
 		name string
@@ -250,9 +221,7 @@ func registerMemInfo(node string, mi *machinepb.MemInfo, reg prometheus.Register
 	hs.WithLabelValues(node).Set(float64(mi.GetHugepagesize()) * 1024)
 }
 
-// Degraded implements collector.DegradedReporter: a DIMM list that has not
-// refreshed since its last success is re-registered from cache and looks
-// exactly like a clean collection.
+// Degraded flags a DIMM list that has not refreshed since its last success.
 func (m *MemoryCollector) Degraded(node string) []collector.Degradation {
 	m.mu.Lock()
 	cached, ok := m.cache[node]
@@ -263,13 +232,9 @@ func (m *MemoryCollector) Degraded(node string) []collector.Degradation {
 	return nil
 }
 
-// Prune implements collector.Pruner: drop the cached DIMM list for departed
-// nodes.
+// Prune drops the cached DIMM list for departed nodes.
 func (m *MemoryCollector) Prune(live map[string]struct{}) {
-	// An empty set means discovery has not synced yet, not that the cluster
-	// is empty — pruning here would drop every node's state on a transient
-	// watch blip. app.prune() guards this too; the Pruner contract says
-	// implementations must, so they do.
+	// An empty live set means discovery has not synced; the Pruner contract says that prunes nothing.
 	if len(live) == 0 {
 		return
 	}

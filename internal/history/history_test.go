@@ -70,8 +70,8 @@ func TestRingEvictsOldestAtTheCeiling(t *testing.T) {
 	// Below the ceiling the ring grows instead of evicting, so the configured
 	// window survives a fast cadence (finding 5.6). Past it, the oldest point
 	// goes: append maxCap+2 samples 1 ms apart, all inside the window.
-	max := s.maxCap
-	for i := 0; i < max+2; i++ {
+	limit := s.maxCap
+	for i := 0; i < limit+2; i++ {
 		s.Append("n1", "x", *now, float64(i))
 		(*now) = now.Add(time.Millisecond)
 	}
@@ -79,10 +79,10 @@ func TestRingEvictsOldestAtTheCeiling(t *testing.T) {
 	if !ok {
 		t.Fatal("Points: ok=false, want data")
 	}
-	if len(pts["x"]) != max {
-		t.Fatalf("ring: got %d points, want the ceiling %d", len(pts["x"]), max)
+	if len(pts["x"]) != limit {
+		t.Fatalf("ring: got %d points, want the ceiling %d", len(pts["x"]), limit)
 	}
-	if pts["x"][0].V != 2 || pts["x"][len(pts["x"])-1].V != float64(max+1) {
+	if pts["x"][0].V != 2 || pts["x"][len(pts["x"])-1].V != float64(limit+1) {
 		t.Errorf("ring eviction: first=%v last=%v, want the two oldest evicted", pts["x"][0].V, pts["x"][len(pts["x"])-1].V)
 	}
 }
@@ -112,11 +112,11 @@ func TestPrune(t *testing.T) {
 func TestConcurrentAppendAndRead(t *testing.T) {
 	s, now := newTestStore(10 * time.Minute)
 	var wg sync.WaitGroup
-	for g := 0; g < 4; g++ {
+	for g := range 4 {
 		wg.Add(1)
 		go func(g int) {
 			defer wg.Done()
-			for i := 0; i < 200; i++ {
+			for range 200 {
 				s.Append(fmt.Sprintf("n%d", g%2), "x", *now, 1)
 				s.Points(fmt.Sprintf("n%d", g%2))
 			}
@@ -166,7 +166,7 @@ func TestWindowIsHonouredAtFastCadence(t *testing.T) {
 	// Ten minutes of one-second samples: 600 points, twice what the initial
 	// ring holds.
 	const n = 600
-	for i := 0; i < n; i++ {
+	for i := range n {
 		now = base.Add(time.Duration(i) * time.Second)
 		s.Append("n1", "usage.all", now, float64(i))
 	}
@@ -198,7 +198,7 @@ func TestRingDoesNotGrowPastTheWindow(t *testing.T) {
 	s.now = func() time.Time { return now }
 
 	// Append far faster than the scheduler can actually tick.
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		now = base.Add(time.Duration(i) * 10 * time.Millisecond)
 		s.Append("n1", "usage.all", now, float64(i))
 	}

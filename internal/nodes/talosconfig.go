@@ -14,14 +14,7 @@ import (
 	talosconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 )
 
-// TalosConfig holds the parsed talosconfig used to talk to node APIs.
-//
-// Resolution is mandatory-path-first: in-cluster the chart sets
-// $TALOSCONFIG to the mounted serviceaccounts.talos.dev secret (Talos's
-// built-in apps & in-cluster authentication); locally the talosctl default
-// ~/.talos/config is used. Machinery's default path rules provide the same
-// order, including the service-account mount path as the last in-cluster
-// fallback.
+// TalosConfig holds the parsed talosconfig; resolution is mandatory-path-first, then talosctl defaults.
 type TalosConfig struct {
 	Path         string
 	ContextName  string
@@ -35,8 +28,7 @@ func (t TalosConfig) Context() *talosconfig.Context {
 	return t.context
 }
 
-// LoadTalosConfig reads the talosconfig using the standard resolution
-// order. It never creates or modifies files.
+// LoadTalosConfig reads the talosconfig in the standard order and never writes files.
 func LoadTalosConfig() (TalosConfig, error) {
 	paths, err := talosconfig.GetDefaultPaths()
 	if err != nil {

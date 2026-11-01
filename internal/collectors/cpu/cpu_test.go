@@ -613,7 +613,7 @@ func TestDegradedReflectsFrequencyFallbackDisable(t *testing.T) {
 	if d := c.Degraded("n1"); len(d) != 0 {
 		t.Fatalf("a live collector reported %v", d)
 	}
-	c.warnFallback("n1")
+	c.fallbackGate.Trip("n1", errors.New("permission denied"))
 	d := c.Degraded("n1")
 	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
 		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)

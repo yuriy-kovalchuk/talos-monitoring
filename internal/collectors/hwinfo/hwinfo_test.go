@@ -583,7 +583,7 @@ func TestMemoryCollectorServesCachedInventory(t *testing.T) {
 	// registry each time, so a skipped list must not mean a missing metric.
 	st := &countingState{CoreState: fixtures()}
 	c := testMemoryCollector(st, stubMemAPI{mi: fixtureMemInfo()})
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		reg := prometheus.NewRegistry()
 		if err := c.Collect(context.Background(), testNode(), reg); err != nil {
 			t.Fatalf("collect %d: %v", i, err)
@@ -744,7 +744,7 @@ func TestPCIDegradesWithoutFileAccess(t *testing.T) {
 	if !found {
 		t.Error("PCI inventory lost when file reads were denied")
 	}
-	if !c.disabled.Load() {
+	if !c.gate.Off() {
 		t.Error("expected the sysfs enrichment to disable itself after a permission error")
 	}
 
@@ -856,7 +856,7 @@ func TestPCIDegradedReflectsEnrichmentDisable(t *testing.T) {
 	if d := c.Degraded("node-a"); len(d) != 0 {
 		t.Fatalf("a live collector reported %v", d)
 	}
-	c.disable("node-a")
+	c.gate.Trip("node-a", errors.New("permission denied"))
 	d := c.Degraded("node-a")
 	if len(d) != 1 || d[0].Reason != collector.ReasonPermission || d[0].Stopped {
 		t.Errorf("Degraded = %+v, want one non-stopped %q degradation", d, collector.ReasonPermission)

@@ -31,7 +31,7 @@ func TestSecondCallerWithinTTLReusesTheResponse(t *testing.T) {
 		return resp(), nil
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := c.Get(context.Background(), "n1", fetch); err != nil {
 			t.Fatal(err)
 		}

@@ -21,8 +21,7 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a collector (enabled by default). Duplicate names are an
-// error.
+// Register adds a collector, enabled by default; duplicate names are an error.
 func (r *Registry) Register(c Collector) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -34,10 +33,7 @@ func (r *Registry) Register(c Collector) error {
 	return nil
 }
 
-// SetEnabled selects the enabled set from per-name decisions. A missing name
-// (or a nil map) stays enabled — the default; an explicit false takes the
-// collector out of the scrape loop while it remains registered, so its state
-// is still pruned. Names that were never registered are skipped.
+// SetEnabled selects the enabled set; a disabled collector stays registered so it is still pruned.
 func (r *Registry) SetEnabled(enabled map[string]bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -81,8 +77,7 @@ func (r *Registry) namesLocked() []string {
 	return names
 }
 
-// All returns every registered collector, enabled or not. Pruning must reach
-// a disabled collector too: it may hold state from before it was disabled.
+// All returns every collector: pruning must reach a disabled one, which may hold old state.
 func (r *Registry) All() []Collector {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

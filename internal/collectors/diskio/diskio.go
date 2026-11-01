@@ -1,15 +1,4 @@
-// Package diskio collects per-device block I/O counters from the DiskStats
-// machine API RPC (the node's /proc/diskstats).
-//
-// This is the half of storage monitoring the block collector does not cover.
-// block knows every disk's model, WWID, transport, capacity and how full it
-// is; none of that says whether the disk is doing any work, how long it is
-// taking, or how deep its queue is. Throughput, IOPS and latency are where a
-// storage investigation starts, and they were the largest remaining gap
-// against node_exporter.
-//
-// The RPC is os:reader-safe — unlike the sysfs collectors, this needs no
-// os:admin and has no self-disable path.
+// Package diskio exports per-device block I/O counters from the DiskStats RPC (os:reader-safe).
 package diskio
 
 import (
@@ -31,22 +20,13 @@ import (
 // Name is the collector name (used in the --collectors.<name>.enabled and TTL flags).
 const Name = "diskio"
 
-// sectorBytes converts /proc/diskstats sector counts to bytes.
-//
-// The kernel always reports these in 512-byte units regardless of the device's
-// real logical or physical sector size — see Documentation/admin-guide/iostats.rst.
-// Multiplying by the disk's own sector size (4096 on most NVMe) would overstate
-// throughput eightfold.
+// sectorBytes: /proc/diskstats always uses 512-byte units, whatever the device's sector size is.
 const sectorBytes = 512
 
-// virtualRe matches devices with no hardware behind them: Talos mounts each
-// system extension as a loop device (8 of them on the reference nodes), and
-// ram/fd devices are equally meaningless here. zram is deliberately NOT in
-// this set — compressed swap is real traffic worth seeing.
+// virtualRe skips extension loop devices; zram is real traffic and stays.
 var virtualRe = regexp.MustCompile(`^(loop|ram|fd)[0-9]+$`)
 
-// partitionRe splits a partition name into its parent disk and index:
-// "nvme0n1p3" -> "nvme0n1", "sda1" -> "sda".
+// partitionRe splits a partition name into parent disk and index (nvme0n1p3, sda1).
 var partitionRe = regexp.MustCompile(`^(.*?)p?([0-9]+)$`)
 
 // diskAPI is the subset of the Talos client the collector uses (test seam).
@@ -84,11 +64,7 @@ func (c *Collector) WithSnapshot(s *snapshot.Store) *Collector {
 // Name implements collector.Collector.
 func (c *Collector) Name() string { return Name }
 
-// Class implements collector.Collector.
-//
-// Live: these are rate sources. Sampling them on the inventory cadence would
-// make every rate() a five-minute average and hide exactly the bursts worth
-// looking at.
+// Live: sampling on the inventory cadence would make every rate() a five-minute average.
 func (c *Collector) Class() collector.Class { return collector.Live }
 
 // Collect reads the counters and registers them.
@@ -101,9 +77,7 @@ func (c *Collector) Collect(ctx context.Context, node *collector.NodeClient, reg
 
 	var devices []*machinepb.DiskStat
 	for _, msg := range resp.GetMessages() {
-		// Total is deliberately ignored: it is a pre-summed row that counts
-		// partitions on top of their parent disk, so it overstates a machine
-		// with a partitioned system disk. Sum the type="disk" devices instead.
+		// Total double-counts partitions on top of their parent; sum type="disk" instead.
 		devices = append(devices, msg.GetDevices()...)
 	}
 
@@ -149,17 +123,7 @@ type row struct {
 	DiscardTimeSeconds float64
 }
 
-// classify converts the RPC rows to base units and labels each device as a
-// whole disk, a partition of one, or a virtual device.
-//
-// Partition detection is name-based against the same response: nvme0n1p3 is a
-// partition because nvme0n1 is also present. That matters because a partition's
-// counters are also counted in its parent, so summing every device double-counts
-// every partitioned disk. The `kind` label on talos_block_io_info is what lets a
-// query pick one level:
-//
-//	sum(rate(talos_block_io_read_bytes_total[5m]))
-//	  * on(node,device) group_left talos_block_io_info{kind="disk"}
+// classify labels each row disk/partition/virtual; a partition's counters are also in its parent.
 func classify(devices []*machinepb.DiskStat) []row {
 	names := make(map[string]bool, len(devices))
 	for _, d := range devices {
@@ -211,9 +175,7 @@ func classify(devices []*machinepb.DiskStat) []row {
 	return out
 }
 
-// isPartitionOf reports whether name is a partition of another device in the
-// same set. Linux names partitions parent+N, with an interposed "p" when the
-// parent's name already ends in a digit (nvme0n1p3, mmcblk0p1, sda1).
+// isPartitionOf matches Linux naming: parent+N, with an interposed p after a digit.
 func isPartitionOf(name string, names map[string]bool) bool {
 	m := partitionRe.FindStringSubmatch(name)
 	if m == nil || m[1] == "" {
@@ -222,12 +184,7 @@ func isPartitionOf(name string, names map[string]bool) bool {
 	return names[m[1]]
 }
 
-// register exports the counters.
-//
-// Every _total is a counter: these are monotonic since boot, so rate() works
-// from the first scrape and a reboot reads as a counter reset, which is
-// exactly right. Time fields are seconds (the RPC carries milliseconds) and
-// sector counts are bytes, per the base-unit convention.
+// register exports monotonic counters in base units (seconds, bytes), so rate() works from boot.
 func register(nodeName string, rows []row, reg prometheus.Registerer) {
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_block_io_info",

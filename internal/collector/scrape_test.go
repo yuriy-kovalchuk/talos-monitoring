@@ -461,12 +461,10 @@ func TestConcurrentRefreshNoDoubleCollect(t *testing.T) {
 	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, c)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			e.scraper.Refresh(context.Background())
-		}()
+		})
 	}
 
 	// The first refresh holds the collection in flight; let the others run
@@ -548,7 +546,7 @@ func (f *ttlFake) DefaultTTL() time.Duration { return f.ttl }
 func TestScraperTTLs(t *testing.T) {
 	live := &fakeCollector{name: "live", class: Live}
 	inv := &fakeCollector{name: "inv", class: Inventory}
-	own := &ttlFake{fakeCollector: fakeCollector{name: "own", class: Live}, ttl: 5 * time.Second}
+	own := &ttlFake{name: "own", class: Live, ttl: 5 * time.Second}
 	list := oneNode
 	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true,
 		map[string]time.Duration{"inv": time.Hour}, live, inv, own)
@@ -592,7 +590,7 @@ func TestGatherNeverCollects(t *testing.T) {
 	// arriving here would claim the stale entry and issue the RPC inline,
 	// blocking the response for up to the per-node timeout.
 	e.advance(31 * time.Second)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		e.gather()
 	}
 	if calls := c.callsCount(); calls != 1 {
@@ -763,7 +761,7 @@ func TestMergeFamiliesDropsDuplicateSeries(t *testing.T) {
 		}
 	}
 	lines := map[string]int{}
-	for _, l := range strings.Split(sb.String(), "\n") {
+	for l := range strings.SplitSeq(sb.String(), "\n") {
 		if strings.HasPrefix(l, "dup_info{") {
 			lines[l]++
 		}
@@ -790,7 +788,7 @@ func TestIdleTickDoesNoWork(t *testing.T) {
 	}
 
 	// Ticks inside the TTL must not collect anything.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		e.advance(time.Second)
 		e.tick()
 	}
@@ -904,7 +902,7 @@ func TestMergeDoesNotMutateItsInputs(t *testing.T) {
 	a, b := build("n1"), build("n2")
 	before := len(a[0].Metric)
 
-	for i := 0; i < 3; i++ { // several scrapes over the same cached lists
+	for i := range 3 { // several scrapes over the same cached lists
 		merged := mergeFamilies(source{owner: "cpu", families: a}, source{owner: "cpu", families: b})
 		if f := findFamily(merged, "keep_info"); f == nil || len(f.Metric) != 2 {
 			t.Fatalf("scrape %d: got %v, want 2 series", i, f)
@@ -927,7 +925,7 @@ func TestCachedExpositionIsGatheredOncePerCollection(t *testing.T) {
 
 	e := &entry{reg: c.Registry, ts: time.Now()}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if fams := e.families(log, "n1", "test"); len(fams) != 1 {
 			t.Fatalf("scrape %d: got %d families, want 1", i, len(fams))
 		}
@@ -1122,7 +1120,7 @@ func degradedValue(families []*dto.MetricFamily, node, collectorName, reason str
 // existed, collections_total kept ticking on schedule, no error counter moved,
 // and the only trace was one Warn line from the round that tripped it.
 func TestDegradedGaugeTracksTransitions(t *testing.T) {
-	c := &degradedCollector{fakeCollector: fakeCollector{name: "sens", class: Live, value: 1}}
+	c := &degradedCollector{name: "sens", class: Live, value: 1}
 	list := oneNode
 	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, c)
 
@@ -1178,7 +1176,7 @@ func TestDegradedGaugeTracksTransitions(t *testing.T) {
 // exporter's single source of truth for reachability - at 1 for a node the
 // exporter had not spoken to at all.
 func TestSelfDisabledCollectorDoesNotAssertReachability(t *testing.T) {
-	c := &degradedCollector{fakeCollector: fakeCollector{name: "sens", class: Live, value: 1}}
+	c := &degradedCollector{name: "sens", class: Live, value: 1}
 	c.set(Degradation{Reason: ReasonPermission, Stopped: true})
 	list := oneNode
 	e := newEnv(t, 30*time.Second, 5*time.Minute, 10*time.Second, &list, true, nil, c)

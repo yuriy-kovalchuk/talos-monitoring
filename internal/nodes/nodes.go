@@ -1,10 +1,4 @@
-// Package nodes discovers cluster nodes from the Kubernetes API and
-// maintains a thread-safe in-memory snapshot of them.
-//
-// Outside of Kubernetes the client is built from the default kubeconfig
-// (KUBECONFIG env or ~/.kube/config); in-cluster it uses the service
-// account config. The Kubernetes service account needs get/list/watch
-// on nodes.
+// Package nodes discovers cluster nodes from the Kubernetes API and keeps a thread-safe view of them.
 package nodes
 
 import (
@@ -25,8 +19,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// retryInterval is how long Run waits before retrying Kubernetes client
-// construction when no usable configuration is available.
+// retryInterval is the wait before retrying Kubernetes client construction.
 const retryInterval = 10 * time.Second
 
 // roleLabelPrefix is the Kubernetes convention for node role labels.
@@ -63,12 +56,7 @@ func New(log *slog.Logger, reg prometheus.Registerer) *Manager {
 		Help: "Number of Kubernetes nodes currently discovered. A gauge: it falls when a node leaves.",
 	})
 	reg.MustRegister(gauge)
-	// The node's Kubernetes-side identity. It is the only thing the dashboard
-	// shows that no collector produces — discovery reads it from the node
-	// object, not from the Talos API — so without this family the IP, role and
-	// kubelet columns would be UI-only and break the §1.1 invariant. Mutable
-	// attributes (a re-assigned IP, a kubelet upgrade) belong on an _info
-	// metric precisely so the change moves a series.
+	// Discovery reads these, no collector does: without this family the UI would show them alone (§1.1).
 	info := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "talos_node_k8s_info",
 		Help: "Kubernetes-side identity of a discovered node (value 1): internal IP, hostname, roles, kubelet version, OS and architecture.",
@@ -82,20 +70,14 @@ func New(log *slog.Logger, reg prometheus.Registerer) *Manager {
 	}
 }
 
-// SetClientset overrides the Kubernetes client used by Run. It must be called
-// before Run; without it Run resolves the client itself (in-cluster config,
-// then the usual kubeconfig rules). Tests inject a fake so the parts of the
-// system that depend on discovery can be driven without an API server.
+// SetClientset overrides the Kubernetes client; call it before Run (tests inject a fake).
 func (m *Manager) SetClientset(cs kubernetes.Interface) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clientset = cs
 }
 
-// Run starts node discovery and blocks until ctx is done.
-// Kubernetes client construction failures are logged and retried;
-// API failures afterwards are retried by the informer itself. Run never
-// fails hard.
+// Run starts discovery and blocks until ctx is done; client construction is retried, never fatal.
 func (m *Manager) Run(ctx context.Context) {
 	m.mu.RLock()
 	cs := m.clientset
@@ -189,13 +171,7 @@ func (m *Manager) deleteNode(obj any) {
 	m.log.Info("node removed", "node", n.Name)
 }
 
-// publishInfo rebuilds talos_node_k8s_info from the current node set. The
-// caller holds m.mu for writing.
-//
-// Reset-then-repopulate rather than a per-node Set: every label is mutable, so
-// an updated node writes a *new* series and the stale one would otherwise be
-// exported forever — a node would appear twice after an IP change or a kubelet
-// upgrade. The set is one series per node, so rebuilding it is free.
+// publishInfo resets the family wholesale: every label is mutable, so a stale series would linger.
 func (m *Manager) publishInfo() {
 	m.info.Reset()
 	for _, n := range m.nodes {
@@ -204,13 +180,10 @@ func (m *Manager) publishInfo() {
 	}
 }
 
-// NewClientset builds the Kubernetes client: in-cluster service account config
-// first, then the default kubeconfig loading rules. Exported so other watchers
-// (PersistentVolumes) can share the same resolution instead of duplicating it.
+// NewClientset resolves the client (in-cluster, then kubeconfig) so other watchers share the rules.
 func NewClientset() (kubernetes.Interface, error) { return kubernetesClientset() }
 
-// kubernetesClientset builds the Kubernetes client: in-cluster service
-// account config first, then the default kubeconfig loading rules.
+// kubernetesClientset resolves in-cluster config first, then the default kubeconfig rules.
 func kubernetesClientset() (kubernetes.Interface, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {

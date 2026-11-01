@@ -25,26 +25,13 @@ func (m mountTalosAPI) Mounts(ctx context.Context) (*machinepb.MountsResponse, e
 	return m.client.MachineClient.Mounts(ctx, &empty.Empty{})
 }
 
-// csiMountRe matches the pod-level CSI mount and captures the PersistentVolume
-// name, which is the join key to Kubernetes.
-//
-// Each volume appears twice on a node: once as the driver's `globalmount` and
-// once per pod under `kubernetes.io~csi/<pv>/mount`. Anchoring on the pod-level
-// path deduplicates. The pod UID in the path is deliberately NOT used as a
-// label — it changes on every pod restart and would churn the series.
+// csiMountRe captures the PV name from the pod-level path, which dedupes and avoids the pod UID.
 var csiMountRe = regexp.MustCompile(`/kubernetes\.io~csi/(pvc-[0-9a-f-]+)/mount$`)
 
 // kubeletPrefix marks mounts that belong to workloads rather than the node.
 const kubeletPrefix = "/var/lib/kubelet/"
 
-// registerMounts exports per-volume and per-filesystem usage.
-//
-// Talos reports only size and available; used is derived as size - available.
-// That is what `talosctl mounts` shows, and it equals df's Used only when the
-// filesystem has no reserved blocks. On the reference cluster the CSI volumes
-// are created with no reserve (a 52 GiB empty volume reports 0.02 GiB used, not
-// the 2.6 GiB a 5% ext4 reserve would), so the two agree — but the raw size and
-// available are exported alongside so nobody has to take the derived value.
+// registerMounts exports per-volume and per-filesystem usage; used is derived as size - available.
 func registerMounts(nodeName string, mounts []*machinepb.MountStat, reg prometheus.Registerer) []snapshot.Filesystem {
 	volSize := gaugeVec("talos_volume_size_bytes", "Filesystem size of a mounted PersistentVolume.", "node", "pv")
 	volAvail := gaugeVec("talos_volume_available_bytes", "Space available on a mounted PersistentVolume.", "node", "pv")
@@ -60,8 +47,7 @@ func registerMounts(nodeName string, mounts []*machinepb.MountStat, reg promethe
 		reg.MustRegister(g)
 	}
 
-	// A device can carry several bind mounts of the same filesystem (/var and
-	// /opt report identical numbers on Talos); keep the first, shortest path.
+	// One filesystem can be bind-mounted twice with identical numbers; keep the first.
 	seenDevice := map[string]bool{}
 	var out []snapshot.Filesystem
 
@@ -90,8 +76,7 @@ func registerMounts(nodeName string, mounts []*machinepb.MountStat, reg promethe
 		if strings.HasPrefix(path, kubeletPrefix) {
 			continue // other workload mounts: secrets, downward-api, projected
 		}
-		// Node filesystems: only real block devices. Everything else Talos
-		// reports ("none", "rootfs") is a bind mount or tmpfs view of one.
+		// Only real block devices: "none" and "rootfs" are bind mounts or tmpfs views.
 		if !strings.HasPrefix(dev, "/dev/") || seenDevice[dev] {
 			continue
 		}
@@ -109,8 +94,7 @@ func registerMounts(nodeName string, mounts []*machinepb.MountStat, reg promethe
 	return out
 }
 
-// mountFilesystem labels how the volume is reached: a block device, or a
-// network export (an NFS-backed PV reports "host:/export" as its device).
+// mountFilesystem says how the volume is reached: block device or network export.
 func mountFilesystem(device string) string {
 	if strings.HasPrefix(device, "/dev/") {
 		return "block"

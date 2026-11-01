@@ -10,7 +10,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/yuriy-kovalchuk/talos-monitoring/internal/collector"
@@ -212,7 +211,7 @@ func TestReadyRequiresTalosConfig(t *testing.T) {
 	}
 
 	a.nodes.SetClientset(fake.NewSimpleClientset(&corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+		Name: "worker-1",
 		Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
 			{Type: corev1.NodeInternalIP, Address: "192.0.2.10"},
 			{Type: corev1.NodeHostName, Address: "worker-1"},

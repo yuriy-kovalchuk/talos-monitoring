@@ -32,7 +32,7 @@ import (
 func synthSnap(nodeCount, threads int) (*snapshot.Store, []nodes.Node) {
 	s := snapshot.New()
 	var list []nodes.Node
-	for i := 0; i < nodeCount; i++ {
+	for i := range nodeCount {
 		name := fmt.Sprintf("node-%03d", i)
 		list = append(list, nodes.Node{Name: name, IP: fmt.Sprintf("10.0.%d.%d", i/250, i%250),
 			KubeVersion: "v1.35.0", Roles: []string{"worker"}})

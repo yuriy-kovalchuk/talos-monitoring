@@ -1,19 +1,4 @@
-// Package metricguard turns this project's metric conventions into checks a
-// test can run, instead of rules a reviewer has to remember.
-//
-// Two classes of bug motivated it, both of which shipped and were only caught
-// by a manual audit:
-//
-//   - A value rendered in the UI that no metric carried (a failed volume's
-//     error message). §1.1 says the dashboard is a subset of the metrics, but
-//     nothing enforced it: tests fill the snapshot directly, while production
-//     fills the snapshot and the registry together in one collector pass, so
-//     no fixture ever compared the two.
-//   - Metric-contract slips: a counter without _total, an _info family
-//     carrying a measurement, a unit in a label name.
-//
-// The checks run against what a collector actually registered, so they see
-// the same thing Prometheus does.
+// Package metricguard turns this project's metric conventions into checks a collector test can run.
 package metricguard
 
 import (
@@ -25,9 +10,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// unitWords are unit names that belong in a metric name's suffix, never in a
-// label. A `kind`-style label carrying the unit is how one family ends up
-// holding two incompatible quantities.
+// unitWords are units that belong in a name's suffix, never in a label.
 var unitWords = map[string]bool{
 	"bytes": true, "seconds": true, "hertz": true, "celsius": true, "volts": true,
 	"watts": true, "mhz": true, "ghz": true, "ms": true, "percent": true,
@@ -36,17 +19,14 @@ var unitWords = map[string]bool{
 
 // Options relaxes checks a collector has a documented reason to fail.
 type Options struct {
-	// ClusterScoped are families that legitimately carry no `node` label
-	// because they describe the cluster, not a machine (talos_pv_*).
+	// ClusterScoped are families that legitimately carry no node label (talos_pv_*).
 	ClusterScoped map[string]bool
 
-	// UncoveredStrings are snapshot field names whose value deliberately does
-	// not appear in any label. Every entry needs a comment saying why.
+	// UncoveredStrings are snapshot fields deliberately absent from any label; each needs a reason.
 	UncoveredStrings map[string]bool
 }
 
-// Validate checks the metric contract against a gathered family set and
-// returns one message per violation.
+// Validate returns one message per metric-contract violation in a gathered family set.
 func Validate(fams []*dto.MetricFamily, opts Options) []string {
 	var out []string
 	for _, f := range fams {
@@ -87,15 +67,7 @@ func Validate(fams []*dto.MetricFamily, opts Options) []string {
 	return dedupe(out)
 }
 
-// SnapshotCovered enforces §1.1 for the string half of a snapshot section:
-// every non-empty string a collector wrote to the snapshot must also appear as
-// a label value on some metric the same collector registered.
-//
-// Strings are the half worth checking automatically. Numbers are almost always
-// the metric's own value, and where they are not they are unit-converted
-// (MHz in the UI, hertz in the metric), so matching them would be guesswork.
-// Strings are exact: a phase, a device name, an error message either rides on
-// a label or it does not.
+// SnapshotCovered enforces §1.1 for strings: every non-empty snapshot string must be a label value.
 func SnapshotCovered(section any, fams []*dto.MetricFamily, opts Options) []string {
 	labels := map[string]bool{}
 	for _, f := range fams {
@@ -121,9 +93,7 @@ func SnapshotCovered(section any, fams []*dto.MetricFamily, opts Options) []stri
 
 type strField struct{ path, value string }
 
-// strFields walks a struct (through pointers and slices) collecting every
-// string field with its dotted path. Slice elements share their field's path,
-// so an allowlist entry covers the whole slice rather than one index.
+// strFields collects string fields with dotted paths; slice elements share their field's path.
 func strFields(v reflect.Value, path string) []strField {
 	var out []strField
 	switch v.Kind() {
