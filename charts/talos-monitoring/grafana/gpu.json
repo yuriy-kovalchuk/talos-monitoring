@@ -268,7 +268,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(max by (card) (talos_gpu_gtt_total_bytes{node=\"$node\"}))",
+          "expr": "max(max by (card) (talos_gpu_gtt_total_bytes{node=\"$node\"}))",
           "format": "time_series",
           "instant": false,
           "legendFormat": "total",
@@ -399,7 +399,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(max by (sensor) (talos_sensor_power_watts{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"})) or vector(0)",
+          "expr": "sum(max by (chip, sensor) (talos_sensor_power_watts{node=\"$node\", chip_name=~\"amdgpu|nvidia|i915|xe|radeon\"})) or vector(0)",
           "format": "time_series",
           "instant": true,
           "legendFormat": "draw",
@@ -466,7 +466,7 @@
       "description": "GPU busy percentage. Not every driver reports it; amdgpu does.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 8,
         "x": 0,
         "y": 5
@@ -576,7 +576,7 @@
       "description": "Video memory and the system memory the GPU can address. VRAM does not page out — a full card fails allocations rather than slowing down.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 8,
         "x": 8,
         "y": 5
@@ -721,7 +721,7 @@
       "description": "Every temperature the card's hwmon chip reports.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 8,
         "x": 16,
         "y": 5
@@ -821,7 +821,7 @@
       "description": "The reading is instantaneous despite the _average filename, and swings either side of the cap; the cap governs the 5m line, which should sit on it.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 0,
         "y": 12
@@ -987,7 +987,7 @@
       "description": "Engine and memory clocks. mclk is the physical clock — a card's marketed memory speed is double it.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 8,
         "y": 12
@@ -1080,7 +1080,7 @@
       "description": "Fan speed against the chip's rated maximum. A line at zero is a stopped fan.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 16,
         "y": 12

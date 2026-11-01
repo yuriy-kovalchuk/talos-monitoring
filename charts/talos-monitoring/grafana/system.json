@@ -124,7 +124,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(max by (service) (((talos_service_running == 1) and (talos_service_healthy == 1) and (talos_service_health_unknown == 0)))) or vector(0)",
+          "expr": "count(max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_healthy{node=\"$node\"} == 1) and (talos_service_health_unknown{node=\"$node\"} == 0)))) or vector(0)",
           "format": "time_series",
           "instant": false,
           "legendFormat": "healthy",
@@ -134,7 +134,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(talos_service_running) or vector(0)",
+          "expr": "count(talos_service_running{node=\"$node\"}) or vector(0)",
           "format": "time_series",
           "instant": false,
           "legendFormat": "of total",
@@ -195,7 +195,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(max by (service) ((talos_service_running == 0)) or max by (service) (((talos_service_running == 1) and (talos_service_healthy == 0) and (talos_service_health_unknown == 0)))) or vector(0)",
+          "expr": "count(max by (service) ((talos_service_running{node=\"$node\"} == 0)) or max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_healthy{node=\"$node\"} == 0) and (talos_service_health_unknown{node=\"$node\"} == 0)))) or vector(0)",
           "format": "time_series",
           "instant": false,
           "legendFormat": "services",
@@ -452,7 +452,7 @@
       "description": "Every way this node's state could have moved inside the window. All zeros means it was quiet.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 6,
         "x": 0,
         "y": 5
@@ -591,7 +591,7 @@
       "description": "The three kernel windows. 1m above 15m is load arriving; the reverse is load draining.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 9,
         "x": 6,
         "y": 5
@@ -700,11 +700,11 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Processes",
+      "title": "Run queue",
       "description": "Runnable against uninterruptible-sleep. Blocked processes inflate load without using CPU.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 9,
         "x": 15,
         "y": 5
@@ -716,7 +716,7 @@
           "expr": "max(talos_node_processes{node=\"$node\", state=\"running\"})",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "running",
+          "legendFormat": "runnable",
           "range": true,
           "refId": "A"
         },
@@ -822,7 +822,7 @@
       "description": "Flat on the floor while the node is fine. The dashed line marks 1.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 12,
         "x": 0,
         "y": 12
@@ -831,7 +831,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(max by (service) ((talos_service_running == 0)) or max by (service) (((talos_service_running == 1) and (talos_service_healthy == 0) and (talos_service_health_unknown == 0)))) or vector(0)",
+          "expr": "count(max by (service) ((talos_service_running{node=\"$node\"} == 0)) or max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_healthy{node=\"$node\"} == 0) and (talos_service_health_unknown{node=\"$node\"} == 0)))) or vector(0)",
           "format": "time_series",
           "instant": false,
           "legendFormat": "not healthy",
@@ -940,7 +940,7 @@
       "description": "Offset, the bounds ntpd puts around it, and oscillator drift on its own axis.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 11,
         "w": 12,
         "x": 12,
         "y": 12
@@ -1118,7 +1118,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(max by (service) (((talos_service_running == 1) and (talos_service_healthy == 0) and (talos_service_health_unknown == 0)))) or vector(0)",
+          "expr": "count(max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_healthy{node=\"$node\"} == 0) and (talos_service_health_unknown{node=\"$node\"} == 0)))) or vector(0)",
           "format": "time_series",
           "instant": true,
           "legendFormat": "count",
@@ -1183,7 +1183,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(max by (service) ((talos_service_running == 0))) or vector(0)",
+          "expr": "count(max by (service) ((talos_service_running{node=\"$node\"} == 0))) or vector(0)",
           "format": "time_series",
           "instant": true,
           "legendFormat": "count",
@@ -1248,7 +1248,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(max by (service) (((talos_service_running == 1) and (talos_service_health_unknown == 1)))) or vector(0)",
+          "expr": "count(max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_health_unknown{node=\"$node\"} == 1)))) or vector(0)",
           "format": "time_series",
           "instant": true,
           "legendFormat": "count",
@@ -1488,7 +1488,7 @@
       "description": "Every service, the state it is in, and how many times that state moved inside the window.",
       "datasource": null,
       "gridPos": {
-        "h": 9,
+        "h": 14,
         "w": 12,
         "x": 12,
         "y": 24
@@ -1497,7 +1497,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "label_replace(max by (service) (((talos_service_running == 1) and (talos_service_healthy == 1) and (talos_service_health_unknown == 0))), \"state\", \"healthy\", \"\", \"\")\n  or\nlabel_replace(max by (service) (((talos_service_running == 1) and (talos_service_health_unknown == 1))), \"state\", \"no check\", \"\", \"\")\n  or\nlabel_replace(max by (service) (((talos_service_running == 1) and (talos_service_healthy == 0) and (talos_service_health_unknown == 0))), \"state\", \"failing\", \"\", \"\")\n  or\nlabel_replace(max by (service) ((talos_service_running == 0)), \"state\", \"stopped\", \"\", \"\")",
+          "expr": "label_replace(max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_healthy{node=\"$node\"} == 1) and (talos_service_health_unknown{node=\"$node\"} == 0))), \"state\", \"healthy\", \"\", \"\")\n  or\nlabel_replace(max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_health_unknown{node=\"$node\"} == 1))), \"state\", \"no check\", \"\", \"\")\n  or\nlabel_replace(max by (service) (((talos_service_running{node=\"$node\"} == 1) and (talos_service_healthy{node=\"$node\"} == 0) and (talos_service_health_unknown{node=\"$node\"} == 0))), \"state\", \"failing\", \"\", \"\")\n  or\nlabel_replace(max by (service) ((talos_service_running{node=\"$node\"} == 0)), \"state\", \"stopped\", \"\", \"\")",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -2118,7 +2118,8 @@
             "filterable": false,
             "inspect": false
           },
-          "unit": "short"
+          "unit": "short",
+          "noValue": "None raised"
         },
         "overrides": [
           {
@@ -2227,7 +2228,8 @@
             "filterable": false,
             "inspect": false
           },
-          "unit": "short"
+          "unit": "short",
+          "noValue": "None: the machine is ready"
         },
         "overrides": [
           {
@@ -3076,7 +3078,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (version) (talos_extension_info{node=\"$node\", extension=\"modules.dep\"})",
+          "expr": "max by (version) (talos_extension_info{node=\"$node\", extension=\"modules.dep\"}) or (label_replace(vector(0), \"version\", \"not reported (no kernel-module extension)\", \"\", \"\") unless on () max(talos_extension_info{node=\"$node\", extension=\"modules.dep\"}))",
           "format": "time_series",
           "instant": true,
           "legendFormat": "{{version}}",
@@ -3653,6 +3655,30 @@
                     }
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Current"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Default (pre-Talos)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
               }
             ]
           }

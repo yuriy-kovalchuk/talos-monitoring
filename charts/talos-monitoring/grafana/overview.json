@@ -618,7 +618,8 @@
             "filterable": false,
             "inspect": false
           },
-          "unit": "short"
+          "unit": "short",
+          "noValue": "Nothing needs attention"
         },
         "overrides": [
           {
@@ -858,11 +859,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -951,11 +949,8 @@
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1038,7 +1033,7 @@
       "description": "Per-node state: stage, ready, services, load, clock, volumes and diagnostics.",
       "datasource": null,
       "gridPos": {
-        "h": 6,
+        "h": 9,
         "w": 24,
         "x": 0,
         "y": 19
@@ -1433,7 +1428,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(talos_hw_processor_cores)",
+          "expr": "sum(max by (node, socket) (talos_hw_processor_cores))",
           "format": "time_series",
           "instant": true,
           "legendFormat": "cores",
@@ -1443,7 +1438,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(talos_hw_processor_threads)",
+          "expr": "sum(max by (node, socket) (talos_hw_processor_threads))",
           "format": "time_series",
           "instant": true,
           "legendFormat": "threads",
@@ -1453,7 +1448,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum(talos_hw_memory_module_size_bytes)",
+          "expr": "sum(max by (node, slot) (talos_hw_memory_module_size_bytes))",
           "format": "time_series",
           "instant": true,
           "legendFormat": "memory",
@@ -1463,7 +1458,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(talos_hw_memory_module_size_bytes)",
+          "expr": "count(max by (node, slot) (talos_hw_memory_module_size_bytes) > 0)",
           "format": "time_series",
           "instant": true,
           "legendFormat": "DIMMs",
@@ -1483,7 +1478,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count(talos_block_disk_info{attachment=\"local\"})",
+          "expr": "count(max by (node, device) (talos_block_disk_info{attachment=\"local\"}))",
           "format": "time_series",
           "instant": true,
           "legendFormat": "disks",
@@ -1589,7 +1584,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (node, product) (talos_hw_processor_info)",
+          "expr": "label_replace(max by (node, product) (talos_hw_processor_info), \"product\", \"$1\", \"product\", \"(?:Intel\\\\(R\\\\) Core\\\\(TM\\\\) |AMD )?(.+?)(?: CPU @ .*| w/ .*)?\")",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1599,7 +1594,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum by (node) (talos_hw_processor_cores)",
+          "expr": "sum by (node) (max by (node, socket) (talos_hw_processor_cores))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1609,7 +1604,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum by (node) (talos_hw_processor_threads)",
+          "expr": "sum by (node) (max by (node, socket) (talos_hw_processor_threads))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1629,7 +1624,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sum by (node) (talos_hw_memory_module_size_bytes)",
+          "expr": "sum by (node) (max by (node, slot) (talos_hw_memory_module_size_bytes))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1639,7 +1634,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count by (node) (talos_hw_memory_module_size_bytes)",
+          "expr": "count by (node) (max by (node, slot) (talos_hw_memory_module_size_bytes) > 0)",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1659,7 +1654,7 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "count by (node) (talos_block_disk_info{attachment=\"local\"})",
+          "expr": "count by (node) (max by (node, device) (talos_block_disk_info{attachment=\"local\"}))",
           "format": "table",
           "instant": true,
           "legendFormat": "",

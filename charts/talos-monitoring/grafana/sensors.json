@@ -47,10 +47,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "topk(1, max by (chip_name, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\"}))",
+          "expr": "topk(1, label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\"))",
           "format": "time_series",
           "instant": true,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": false,
           "refId": "A"
         }
@@ -502,21 +502,18 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (chip_name, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\"})",
+          "expr": "label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\")",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": true,
           "refId": "A"
         }
       ],
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -602,10 +599,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (chip_name, label, sensor) (talos_sensor_fan_rpm{node=\"$node\"})",
+          "expr": "label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_fan_rpm{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\")",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": true,
           "refId": "A"
         }
@@ -686,7 +683,7 @@
       "description": "Power rails with a sensor.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 0,
         "y": 14
@@ -695,10 +692,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (chip_name, label, sensor) (talos_sensor_power_watts{node=\"$node\"})",
+          "expr": "label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_power_watts{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\")",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": true,
           "refId": "A"
         }
@@ -779,7 +776,7 @@
       "description": "Voltage rails. These should be flat — movement is a supply problem.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 8,
         "y": 14
@@ -788,10 +785,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (chip_name, label, sensor) (talos_sensor_voltage_volts{node=\"$node\"})",
+          "expr": "label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_voltage_volts{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\")",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": true,
           "refId": "A"
         }
@@ -859,7 +856,7 @@
             ]
           },
           "unit": "volt",
-          "decimals": 3
+          "decimals": 2
         },
         "overrides": []
       }
@@ -871,7 +868,7 @@
       "description": "Clocks reported through hwmon, typically GPU engine and memory clocks.",
       "datasource": null,
       "gridPos": {
-        "h": 7,
+        "h": 10,
         "w": 8,
         "x": 16,
         "y": 14
@@ -880,10 +877,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "max by (chip_name, label, sensor) (talos_sensor_frequency_hertz{node=\"$node\"})",
+          "expr": "label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_frequency_hertz{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\")",
           "format": "time_series",
           "instant": false,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": true,
           "refId": "A"
         }
@@ -986,10 +983,10 @@
         {
           "datasource": null,
           "editorMode": "code",
-          "expr": "sort_desc(max by (chip_name, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\"}))",
+          "expr": "sort_desc(label_replace(max by (chip, chip_name, label, sensor) (talos_sensor_temperature_celsius{node=\"$node\"}), \"dev\", \"$1\", \"chip\", \".*/([^/]+)\"))",
           "format": "time_series",
           "instant": true,
-          "legendFormat": "{{chip_name}} · {{sensor}} {{label}}",
+          "legendFormat": "{{chip_name}} ({{dev}}) · {{sensor}} {{label}}",
           "range": false,
           "refId": "A"
         }
