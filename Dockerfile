@@ -1,5 +1,5 @@
 # The builder runs on the build host and cross-compiles, so an arm64 image needs no emulation.
-FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS build
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG VERSION=dev
