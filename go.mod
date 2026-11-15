@@ -3,12 +3,12 @@ module github.com/yuriy-kovalchuk/talos-monitoring
 go 1.27.3
 
 require (
-	github.com/cosi-project/runtime v1.16.4
+	github.com/cosi-project/runtime v1.17.1
 	github.com/dustin/go-humanize v1.1.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.73.1
-	github.com/siderolabs/talos/pkg/machinery v1.14.5
+	github.com/siderolabs/talos/pkg/machinery v1.14.6
 	github.com/spf13/cobra v1.10.2
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
